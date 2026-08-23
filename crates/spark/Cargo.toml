@@ -1,0 +1,32 @@
+[package]
+name = "spark"
+description = "spark engine core: unified 2D/3D renderer, ECS, scenes, physics, audio, data-driven rules, asset pipeline"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+readme.workspace = true
+
+[dependencies]
+spark_macros = { path = "../spark_macros", version = "0.1.0" }
+
+anyhow.workspace = true
+bytemuck.workspace = true
+egui.workspace = true
+egui-wgpu.workspace = true
+egui-winit.workspace = true
+glam.workspace = true
+gilrs.workspace = true
+gltf.workspace = true
+hecs.workspace = true
+image.workspace = true
+log.workspace = true
+notify.workspace = true
+pollster.workspace = true
+rapier2d.workspace = true
+rapier3d.workspace = true
+ron.workspace = true
+rodio.workspace = true
+serde.workspace = true
+wgpu.workspace = true
+winit.workspace = true

@@ -1,0 +1,18 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+
+# spark engine artifacts
+.spark_cache/
+*.sparkpack
+
+# editor user state
+.spark_state.ron
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# CI tooling output
+linecount_report.txt

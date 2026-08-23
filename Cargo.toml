@@ -1,0 +1,42 @@
+[workspace]
+resolver = "2"
+members = ["crates/spark", "crates/spark_macros", "crates/spark_editor"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/salom600/spark"
+readme = "README.md"
+keywords = ["gamedev", "engine", "editor", "wgpu", "2d-3d"]
+categories = ["game-engines", "graphics"]
+
+[workspace.dependencies]
+anyhow = "1"
+bytemuck = { version = "1", features = ["derive"] }
+egui = "0.33"
+egui-wgpu = "0.33"
+egui-winit = "0.33"
+env_logger = "0.11"
+glam = { version = "0.30", features = ["serde"] }
+gilrs = "0.11"
+gltf = "1"
+hecs = "0.10"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "hdr"] }
+log = "0.4"
+notify = "8"
+pollster = "0.4"
+proc-macro2 = "1"
+quote = "1"
+rapier2d = "0.19"
+rapier3d = "0.19"
+ron = "0.9"
+rodio = "0.21"
+serde = { version = "1", features = ["derive"] }
+syn = { version = "2", features = ["full", "extra-traits"] }
+wgpu = "27"
+winit = "0.30"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
