@@ -42,9 +42,11 @@ pub struct GltfImport {
 
 /// Import a glTF file from disk.
 pub fn import(path: &Path) -> Option<GltfImport> {
-    let (doc, buffers, images) = gltf::import(path).map_err(|e| {
-        log::warn!("gltf: failed to import {}: {e}", path.display());
-    }).ok()?;
+    let (doc, buffers, images) = gltf::import(path)
+        .map_err(|e| {
+            log::warn!("gltf: failed to import {}: {e}", path.display());
+        })
+        .ok()?;
 
     // ---- Images → RGBA8 -------------------------------------------------
     let mut texture_of_image: Vec<Option<usize>> = vec![None; images.len()];
@@ -52,14 +54,18 @@ pub fn import(path: &Path) -> Option<GltfImport> {
 
     // ---- Primitives -------------------------------------------------------
     let mut primitives: Vec<PrimData> = Vec::new();
-    let mut first_prim_of_mesh: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    let mut first_prim_of_mesh: std::collections::HashMap<usize, usize> =
+        std::collections::HashMap::new();
 
     for mesh in doc.meshes() {
         first_prim_of_mesh.insert(mesh.index(), primitives.len());
         for prim in mesh.primitives() {
             let reader = prim.reader(|buffer| buffers.get(buffer.index()).map(|b| b.0.as_slice()));
 
-            let positions: Vec<[f32; 3]> = reader.read_positions().map(|p| p.collect()).unwrap_or_default();
+            let positions: Vec<[f32; 3]> = reader
+                .read_positions()
+                .map(|p| p.collect())
+                .unwrap_or_default();
             if positions.is_empty() {
                 continue;
             }
@@ -79,7 +85,11 @@ pub fn import(path: &Path) -> Option<GltfImport> {
                 .iter()
                 .zip(normals.iter())
                 .zip(uvs.iter())
-                .map(|((p, n), uv)| Vertex { position: *p, normal: *n, uv: *uv })
+                .map(|((p, n), uv)| Vertex {
+                    position: *p,
+                    normal: *n,
+                    uv: *uv,
+                })
                 .collect();
 
             // Material: PBR factors + base color texture.
@@ -107,7 +117,11 @@ pub fn import(path: &Path) -> Option<GltfImport> {
                     material.texture = Some(format!("#tex{local}"));
                 }
             }
-            primitives.push(PrimData { vertices, indices, material });
+            primitives.push(PrimData {
+                vertices,
+                indices,
+                material,
+            });
         }
     }
 
@@ -120,7 +134,11 @@ pub fn import(path: &Path) -> Option<GltfImport> {
         }
     }
 
-    Some(GltfImport { primitives, textures, root_nodes })
+    Some(GltfImport {
+        primitives,
+        textures,
+        root_nodes,
+    })
 }
 
 fn convert_node(
@@ -128,7 +146,11 @@ fn convert_node(
     first_prim_of_mesh: &std::collections::HashMap<usize, usize>,
 ) -> RawNode {
     let (translation, rotation, scale) = match node.transform() {
-        gltf::scene::Transform::Decomposed { translation, rotation, scale } => (
+        gltf::scene::Transform::Decomposed {
+            translation,
+            rotation,
+            scale,
+        } => (
             Vec3::from(translation),
             Quat::from_xyzw(rotation[0], rotation[1], rotation[2], rotation[3]),
             Vec3::from(scale),
@@ -149,10 +171,13 @@ fn convert_node(
             euler.2.to_degrees(),
         ),
         scale,
-        primitive: node.mesh().and_then(|m| {
-            first_prim_of_mesh.get(&m.index()).copied()
-        }),
-        children: node.children().map(|c| convert_node(&c, first_prim_of_mesh)).collect(),
+        primitive: node
+            .mesh()
+            .and_then(|m| first_prim_of_mesh.get(&m.index()).copied()),
+        children: node
+            .children()
+            .map(|c| convert_node(&c, first_prim_of_mesh))
+            .collect(),
     }
 }
 
@@ -195,7 +220,7 @@ fn image_to_rgba(img: &gltf::image::Data) -> Vec<u8> {
         Format::R16G16B16A16 => img
             .pixels
             .chunks(8)
-            .map(|c| {
+            .flat_map(|c| {
                 let r = u16::from_le_bytes([c[0], c[1]]);
                 let g = u16::from_le_bytes([c[2], c[3]]);
                 let b = u16::from_le_bytes([c[4], c[5]]);
@@ -207,13 +232,8 @@ fn image_to_rgba(img: &gltf::image::Data) -> Vec<u8> {
                     (a >> 8) as u8,
                 ]
             })
-            .flatten()
             .collect(),
         // R8 (luminance) and anything unexpected: replicate to RGB.
-        _ => img
-            .pixels
-            .iter()
-            .flat_map(|&c| [c, c, c, 255])
-            .collect(),
+        _ => img.pixels.iter().flat_map(|&c| [c, c, c, 255]).collect(),
     }
 }

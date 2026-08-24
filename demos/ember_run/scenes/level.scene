@@ -1,0 +1,310 @@
+// Ember Run — level scene.
+// Pure data: layout, physics and all behavior via rules (no Rust).
+// Run with: spark --game demos/ember_run
+(
+    name: "Ember Run",
+    dimension: D2,
+    ambient: 0.6,
+    sky: (r: 0.12, g: 0.08, b: 0.2, a: 1.0),
+    globals: {
+        "coins": 0,
+        "deaths": 0,
+        "won": 0,
+    },
+    entities: [
+        // ------------------------------------------------------------------
+        // Sky backdrop
+        // ------------------------------------------------------------------
+        (
+            name: Some("Sky"),
+            tag: Some("deco"),
+            transform: Some(( position: (30.0, 15.0, -20.0), )),
+            components: [ Sprite((
+                image: "assets/sprites/sky.png",
+                color: (r: 1.0, g: 1.0, b: 1.0, a: 1.0),
+                size: (240.0, 135.0),
+            )) ],
+        ),
+        // ------------------------------------------------------------------
+        // Camera (follows the player via a Start rule on the player)
+        // ------------------------------------------------------------------
+        (
+            name: Some("Camera"),
+            transform: Some(( position: (0.0, 3.0, 10.0), )),
+            components: [ Camera((
+                kind: Ortho2D(height: 11.0),
+                clear: (r: 0.1, g: 0.07, b: 0.18, a: 1.0),
+                near: 0.1,
+                far: 1000.0,
+            )) ],
+        ),
+        // ------------------------------------------------------------------
+        // Player: ember + movement rules
+        // ------------------------------------------------------------------
+        (
+            name: Some("Player"),
+            tag: Some("player"),
+            transform: Some(( position: (0.0, 2.0, 0.0), )),
+            components: [
+                Sprite((
+                    image: "assets/sprites/player.png",
+                    color: (r: 1.0, g: 1.0, b: 1.0, a: 1.0),
+                    size: (1.4, 1.4),
+                )),
+                RigidBody((
+                    kind: Dynamic,
+                    linear_damping: 0.0,
+                    angular_damping: 1.0,
+                    restitution: 0.0,
+                    friction: 0.4,
+                    gravity_scale: 1.4,
+                    lock_rotation: true,
+                )),
+                Collider((
+                    shape: Capsule(half_height: 0.35, r: 0.45),
+                    sensor: false,
+                )),
+                Vars(({"grounded": 0})),
+                Rules((
+                    rules: [
+                        // -- follow cam --
+                        ( on: Start, when: [], run: [ CameraFollowMe(lerp: 0.12) ] ),
+                        // -- horizontal movement (each key gets its own rule) --
+                        ( on: KeyHeld("ArrowLeft"), when: [], run: [ SetVelX(x: -6.5) ] ),
+                        ( on: KeyHeld("KeyA"), when: [], run: [ SetVelX(x: -6.5) ] ),
+                        ( on: KeyHeld("ArrowRight"), when: [], run: [ SetVelX(x: 6.5) ] ),
+                        ( on: KeyHeld("KeyD"), when: [], run: [ SetVelX(x: 6.5) ] ),
+                        // -- stop when no input --
+                        ( on: Update,
+                          when: [ KeyNotHeld("ArrowLeft"), KeyNotHeld("KeyA"),
+                                  KeyNotHeld("ArrowRight"), KeyNotHeld("KeyD") ],
+                          run: [ SetVelX(x: 0.0) ] ),
+                        // -- jump (only when grounded) --
+                        ( on: KeyPressed("Space"),
+                          when: [ Var( scope: Entity, name: "grounded", op: Eq, value: 1 ) ],
+                          run: [
+                              SetVelY(y: 10.5),
+                              SetVar( scope: Entity, name: "grounded", value: 0 ),
+                              PlaySound( sound: "assets/sfx/jump.wav", volume: 0.7 ),
+                          ] ),
+                        // -- grounded tracking --
+                        ( on: CollisionEnter( other: Some("ground") ),
+                          when: [],
+                          run: [ SetVar( scope: Entity, name: "grounded", value: 1 ) ] ),
+                        ( on: CollisionExit( other: Some("ground") ),
+                          when: [],
+                          run: [ SetVar( scope: Entity, name: "grounded", value: 0 ) ] ),
+                        // -- coins --
+                        ( on: CollisionEnter( other: Some("coin") ),
+                          when: [],
+                          run: [
+                              DestroyOther,
+                              AddVar( scope: Global, name: "coins", delta: 1 ),
+                              PlaySound( sound: "assets/sfx/coin.wav", volume: 0.8 ),
+                          ] ),
+                        // -- hazards: respawn at start --
+                        ( on: CollisionEnter( other: Some("hazard") ),
+                          when: [],
+                          run: [
+                              PlaySound( sound: "assets/sfx/hurt.wav", volume: 0.8 ),
+                              Teleport( to: (0.0, 2.0, 0.0) ),
+                              SetVelocity( v: (0.0, 0.0, 0.0), relative: false ),
+                              AddVar( scope: Global, name: "deaths", delta: 1 ),
+                          ] ),
+                        // -- goal --
+                        ( on: CollisionEnter( other: Some("goal") ),
+                          when: [ Var( scope: Global, name: "won", op: Eq, value: 0 ) ],
+                          run: [
+                              PlaySound( sound: "assets/sfx/win.wav", volume: 0.9 ),
+                              AddVar( scope: Global, name: "won", delta: 1 ),
+                              Log("Level complete!"),
+                          ] ),
+                    ],
+                )),
+            ],
+        ),
+        // ------------------------------------------------------------------
+        // Ground strips + hazards
+        // ------------------------------------------------------------------
+        (
+            name: Some("Ground A"), tag: Some("ground"),
+            transform: Some(( position: (0.0, -2.0, 0.0), )),
+            components: [
+                Sprite(( image: "assets/sprites/tile.png", color: (r:1,g:1,b:1,a:1), size: (14.0, 1.6) )),
+                RigidBody(( kind: Static, friction: 0.8, )),
+                Collider(( shape: Box(half: (7.0, 0.8, 0.5)), sensor: false )),
+            ],
+        ),
+        (
+            name: Some("Spikes A"), tag: Some("hazard"),
+            transform: Some(( position: (12.5, -1.2, 0.0), )),
+            components: [
+                Sprite(( image: "assets/sprites/spikes.png", color: (r:1,g:1,b:1,a:1), size: (2.4, 0.8) )),
+                RigidBody(( kind: Static, )),
+                Collider(( shape: Box(half: (1.2, 0.4, 0.4)), sensor: true )),
+            ],
+        ),
+        (
+            name: Some("Ground B"), tag: Some("ground"),
+            transform: Some(( position: (19.0, -2.0, 0.0), )),
+            components: [
+                Sprite(( image: "assets/sprites/tile.png", color: (r:1,g:1,b:1,a:1), size: (10.0, 1.6) )),
+                RigidBody(( kind: Static, friction: 0.8, )),
+                Collider(( shape: Box(half: (5.0, 0.8, 0.5)), sensor: false )),
+            ],
+        ),
+        (
+            name: Some("Spikes B"), tag: Some("hazard"),
+            transform: Some(( position: (26.0, -1.2, 0.0), )),
+            components: [
+                Sprite(( image: "assets/sprites/spikes.png", color: (r:1,g:1,b:1,a:1), size: (3.0, 0.8) )),
+                RigidBody(( kind: Static, )),
+                Collider(( shape: Box(half: (1.5, 0.4, 0.4)), sensor: true )),
+            ],
+        ),
+        (
+            name: Some("Ground C"), tag: Some("ground"),
+            transform: Some(( position: (34.0, -2.0, 0.0), )),
+            components: [
+                Sprite(( image: "assets/sprites/tile.png", color: (r:1,g:1,b:1,a:1), size: (12.0, 1.6) )),
+                RigidBody(( kind: Static, friction: 0.8, )),
+                Collider(( shape: Box(half: (6.0, 0.8, 0.5)), sensor: false )),
+            ],
+        ),
+        // ------------------------------------------------------------------
+        // Floating platforms
+        // ------------------------------------------------------------------
+        (
+            name: Some("Platform 1"), tag: Some("ground"),
+            transform: Some(( position: (8.0, 0.6, 0.0), )),
+            components: [
+                Sprite(( image: "assets/sprites/tile.png", color: (r:1,g:1,b:1,a:1), size: (3.0, 0.8) )),
+                RigidBody(( kind: Static, friction: 0.8, )),
+                Collider(( shape: Box(half: (1.5, 0.4, 0.5)), sensor: false )),
+            ],
+        ),
+        (
+            name: Some("Platform 2"), tag: Some("ground"),
+            transform: Some(( position: (13.0, 2.2, 0.0), )),
+            components: [
+                Sprite(( image: "assets/sprites/tile.png", color: (r:1,g:1,b:1,a:1), size: (2.6, 0.8) )),
+                RigidBody(( kind: Static, friction: 0.8, )),
+                Collider(( shape: Box(half: (1.3, 0.4, 0.5)), sensor: false )),
+            ],
+        ),
+        (
+            name: Some("Platform 3"), tag: Some("ground"),
+            transform: Some(( position: (17.5, 3.8, 0.0), )),
+            components: [
+                Sprite(( image: "assets/sprites/tile.png", color: (r:1,g:1,b:1,a:1), size: (2.6, 0.8) )),
+                RigidBody(( kind: Static, friction: 0.8, )),
+                Collider(( shape: Box(half: (1.3, 0.4, 0.5)), sensor: false )),
+            ],
+        ),
+        (
+            name: Some("Platform 4"), tag: Some("ground"),
+            transform: Some(( position: (24.0, 1.4, 0.0), )),
+            components: [
+                Sprite(( image: "assets/sprites/tile.png", color: (r:1,g:1,b:1,a:1), size: (2.6, 0.8) )),
+                RigidBody(( kind: Static, friction: 0.8, )),
+                Collider(( shape: Box(half: (1.3, 0.4, 0.5)), sensor: false )),
+            ],
+        ),
+        (
+            name: Some("Platform 5"), tag: Some("ground"),
+            transform: Some(( position: (29.0, 3.2, 0.0), )),
+            components: [
+                Sprite(( image: "assets/sprites/tile.png", color: (r:1,g:1,b:1,a:1), size: (2.6, 0.8) )),
+                RigidBody(( kind: Static, friction: 0.8, )),
+                Collider(( shape: Box(half: (1.3, 0.4, 0.5)), sensor: false )),
+            ],
+        ),
+        (
+            name: Some("Goal Platform"), tag: Some("ground"),
+            transform: Some(( position: (38.0, 2.6, 0.0), )),
+            components: [
+                Sprite(( image: "assets/sprites/tile.png", color: (r:1,g:1,b:1,a:1), size: (4.0, 0.8) )),
+                RigidBody(( kind: Static, friction: 0.8, )),
+                Collider(( shape: Box(half: (2.0, 0.4, 0.5)), sensor: false )),
+            ],
+        ),
+        // ------------------------------------------------------------------
+        // Coins
+        // ------------------------------------------------------------------
+        (
+            name: Some("Coin 1"), tag: Some("coin"),
+            transform: Some(( position: (8.0, 2.0, 0.0), )),
+            components: [
+                Sprite(( image: "assets/sprites/coin.png", color: (r:1,g:1,b:1,a:1), size: (0.8, 0.8) )),
+                Collider(( shape: Ball(r: 0.45), sensor: true )),
+            ],
+        ),
+        (
+            name: Some("Coin 2"), tag: Some("coin"),
+            transform: Some(( position: (13.0, 3.6, 0.0), )),
+            components: [
+                Sprite(( image: "assets/sprites/coin.png", color: (r:1,g:1,b:1,a:1), size: (0.8, 0.8) )),
+                Collider(( shape: Ball(r: 0.45), sensor: true )),
+            ],
+        ),
+        (
+            name: Some("Coin 3"), tag: Some("coin"),
+            transform: Some(( position: (17.5, 5.2, 0.0), )),
+            components: [
+                Sprite(( image: "assets/sprites/coin.png", color: (r:1,g:1,b:1,a:1), size: (0.8, 0.8) )),
+                Collider(( shape: Ball(r: 0.45), sensor: true )),
+            ],
+        ),
+        (
+            name: Some("Coin 4"), tag: Some("coin"),
+            transform: Some(( position: (21.5, -0.6, 0.0), )),
+            components: [
+                Sprite(( image: "assets/sprites/coin.png", color: (r:1,g:1,b:1,a:1), size: (0.8, 0.8) )),
+                Collider(( shape: Ball(r: 0.45), sensor: true )),
+            ],
+        ),
+        (
+            name: Some("Coin 5"), tag: Some("coin"),
+            transform: Some(( position: (24.0, 2.8, 0.0), )),
+            components: [
+                Sprite(( image: "assets/sprites/coin.png", color: (r:1,g:1,b:1,a:1), size: (0.8, 0.8) )),
+                Collider(( shape: Ball(r: 0.45), sensor: true )),
+            ],
+        ),
+        (
+            name: Some("Coin 6"), tag: Some("coin"),
+            transform: Some(( position: (29.0, 4.6, 0.0), )),
+            components: [
+                Sprite(( image: "assets/sprites/coin.png", color: (r:1,g:1,b:1,a:1), size: (0.8, 0.8) )),
+                Collider(( shape: Ball(r: 0.45), sensor: true )),
+            ],
+        ),
+        (
+            name: Some("Coin 7"), tag: Some("coin"),
+            transform: Some(( position: (33.0, -0.6, 0.0), )),
+            components: [
+                Sprite(( image: "assets/sprites/coin.png", color: (r:1,g:1,b:1,a:1), size: (0.8, 0.8) )),
+                Collider(( shape: Ball(r: 0.45), sensor: true )),
+            ],
+        ),
+        (
+            name: Some("Coin 8"), tag: Some("coin"),
+            transform: Some(( position: (37.0, 4.4, 0.0), )),
+            components: [
+                Sprite(( image: "assets/sprites/coin.png", color: (r:1,g:1,b:1,a:1), size: (0.8, 0.8) )),
+                Collider(( shape: Ball(r: 0.45), sensor: true )),
+            ],
+        ),
+        // ------------------------------------------------------------------
+        // Goal flag
+        // ------------------------------------------------------------------
+        (
+            name: Some("Goal"), tag: Some("goal"),
+            transform: Some(( position: (38.0, 3.8, 0.0), )),
+            components: [
+                Sprite(( image: "assets/sprites/goal.png", color: (r:1,g:1,b:1,a:1), size: (1.6, 2.4) )),
+                Collider(( shape: Box(half: (0.7, 1.1, 0.4)), sensor: true )),
+            ],
+        ),
+    ],
+)

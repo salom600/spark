@@ -29,7 +29,11 @@ fn main() -> anyhow::Result<()> {
 
     // CLI: `spark` opens the editor; `spark --game <dir>` runs a game.
     let args: Vec<String> = std::env::args().collect();
-    if let Some(dir) = args.iter().position(|a| a == "--game").and_then(|i| args.get(i + 1)) {
+    if let Some(dir) = args
+        .iter()
+        .position(|a| a == "--game")
+        .and_then(|i| args.get(i + 1))
+    {
         return spark::app::run_game(PathBuf::from(dir).as_path());
     }
 
@@ -98,8 +102,10 @@ impl Editor {
     fn new(window: &'static winit::window::Window) -> anyhow::Result<Self> {
         let engine = Engine::editor(window)?;
         let (w, h) = engine.renderer.as_ref().unwrap().size();
-        let mut state = EditorState::default();
-        state.viewport_px = [0, 0, w, h];
+        let state = EditorState {
+            viewport_px: [0, 0, w, h],
+            ..Default::default()
+        };
         let editor_cam = EditorCamera::default();
         Ok(Self {
             engine,
@@ -109,7 +115,10 @@ impl Editor {
             undo: CommandStack::default(),
             editor_cam,
             playing: None,
-            console: vec![("info".into(), "spark editor ready — File → New/Open Project".into())],
+            console: vec![(
+                "info".into(),
+                "spark editor ready — File → New/Open Project".into(),
+            )],
             selected_asset: None,
         })
     }
@@ -129,7 +138,9 @@ impl Editor {
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
-                self.engine.input.on_mouse_move(Vec2::new(position.x as f32, position.y as f32));
+                self.engine
+                    .input
+                    .on_mouse_move(Vec2::new(position.x as f32, position.y as f32));
             }
             WindowEvent::MouseInput { state, button, .. } => {
                 self.engine.input.on_mouse_button(*button, *state);
@@ -163,7 +174,10 @@ impl Editor {
     // -----------------------------------------------------------------------
 
     fn new_project(&mut self, name: &str, dimension: Dimension) {
-        let dir = std::env::current_dir().unwrap_or_default().join("projects").join(name);
+        let dir = std::env::current_dir()
+            .unwrap_or_default()
+            .join("projects")
+            .join(name);
         match Project::create_from_template(&dir, name, dimension) {
             Ok(_) => self.log("info", &format!("created project at {}", dir.display())),
             Err(e) => self.log("error", &format!("create failed: {e}")),
@@ -237,7 +251,9 @@ impl Editor {
 
     fn start_play(&mut self) {
         let snapshot = self.engine.scene.save(&self.engine.registry);
-        self.playing = Some(PlaySnapshot { scene_text: snapshot });
+        self.playing = Some(PlaySnapshot {
+            scene_text: snapshot,
+        });
         self.engine.rules.clear();
         self.engine.playing_track = None;
         self.state.mark_all_fresh(&mut self.engine);
@@ -308,7 +324,10 @@ impl Editor {
         let (cam_override, viewport) = if in_play {
             (None, self.state.full_viewport())
         } else {
-            (Some(self.editor_cam.as_override(self.engine.scene.dimension)), self.state.viewport_rect_px())
+            (
+                Some(self.editor_cam.as_override(self.engine.scene.dimension)),
+                self.state.viewport_rect_px(),
+            )
         };
         let aspect = viewport.2 as f32 / viewport.3.max(1) as f32;
         self.engine.viewport_px = Vec2::new(viewport.2 as f32, viewport.3 as f32);
@@ -327,10 +346,18 @@ impl Editor {
             for (id, delta) in &output.textures_delta.set {
                 r.egui_renderer.update_texture(&dev, &que, *id, delta);
             }
-            let pre = r.egui_renderer.update_buffers(&dev, &que, &mut enc, &jobs, &screen);
+            let pre = r
+                .egui_renderer
+                .update_buffers(&dev, &que, &mut enc, &jobs, &screen);
             let pre = [enc.finish()].into_iter().chain(pre).collect::<Vec<_>>();
 
-            if let Err(e) = r.render(&mut self.engine.assets, &draw, Some((jobs.as_slice(), &screen)), Some(viewport), pre) {
+            if let Err(e) = r.render(
+                &mut self.engine.assets,
+                &draw,
+                Some((jobs.as_slice(), &screen)),
+                Some(viewport),
+                pre,
+            ) {
                 self.log("error", &format!("render: {e}"));
             }
         }
@@ -345,15 +372,23 @@ impl Editor {
 
     fn ui(&mut self, ctx: &egui::Context) {
         self.menu_bar(ctx);
-        egui::TopBottomPanel::bottom("console").resizable(true).show(ctx, |ui| {
-            self.bottom_panel(ui);
-        });
-        egui::SidePanel::left("hierarchy").resizable(true).default_width(240.0).show(ctx, |ui| {
-            self.hierarchy_panel(ui);
-        });
-        egui::SidePanel::right("inspector").resizable(true).default_width(320.0).show(ctx, |ui| {
-            self.inspector_panel(ui);
-        });
+        egui::TopBottomPanel::bottom("console")
+            .resizable(true)
+            .show(ctx, |ui| {
+                self.bottom_panel(ui);
+            });
+        egui::SidePanel::left("hierarchy")
+            .resizable(true)
+            .default_width(240.0)
+            .show(ctx, |ui| {
+                self.hierarchy_panel(ui);
+            });
+        egui::SidePanel::right("inspector")
+            .resizable(true)
+            .default_width(320.0)
+            .show(ctx, |ui| {
+                self.inspector_panel(ui);
+            });
         egui::CentralPanel::default().show(ctx, |ui| {
             self.viewport_panel(ui, ctx);
         });
@@ -365,20 +400,20 @@ impl Editor {
                 ui.menu_button("File", |ui| {
                     if ui.button("New Project…").clicked() {
                         self.state.show_new_project = true;
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Open Project…").clicked() {
                         self.state.show_open_project = true;
-                        ui.close_menu();
+                        ui.close();
                     }
                     ui.separator();
                     if ui.button("Save Scene (Ctrl+S)").clicked() {
                         self.save_scene();
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Reload Scene").clicked() {
                         self.load_scene();
-                        ui.close_menu();
+                        ui.close();
                     }
                     ui.separator();
                     if ui.button("Exit").clicked() {
@@ -386,15 +421,29 @@ impl Editor {
                     }
                 });
                 ui.menu_button("Edit", |ui| {
-                    let undo_lbl = self.undo.peek_undo().map(|l| format!("Undo {l}")).unwrap_or("Undo".into());
-                    let redo_lbl = self.undo.peek_redo().map(|l| format!("Redo {l}")).unwrap_or("Redo".into());
-                    if ui.add_enabled(self.undo.can_undo(), egui::Button::new(undo_lbl)).clicked() {
+                    let undo_lbl = self
+                        .undo
+                        .peek_undo()
+                        .map(|l| format!("Undo {l}"))
+                        .unwrap_or("Undo".into());
+                    let redo_lbl = self
+                        .undo
+                        .peek_redo()
+                        .map(|l| format!("Redo {l}"))
+                        .unwrap_or("Redo".into());
+                    if ui
+                        .add_enabled(self.undo.can_undo(), egui::Button::new(undo_lbl))
+                        .clicked()
+                    {
                         self.apply_undo();
-                        ui.close_menu();
+                        ui.close();
                     }
-                    if ui.add_enabled(self.undo.can_redo(), egui::Button::new(redo_lbl)).clicked() {
+                    if ui
+                        .add_enabled(self.undo.can_redo(), egui::Button::new(redo_lbl))
+                        .clicked()
+                    {
                         self.apply_redo();
-                        ui.close_menu();
+                        ui.close();
                     }
                 });
                 ui.menu_button("Scene", |ui| {
@@ -402,31 +451,31 @@ impl Editor {
                     let label = if playing { "Stop (F5)" } else { "Play (F5)" };
                     if ui.button(label).clicked() {
                         self.toggle_play();
-                        ui.close_menu();
+                        ui.close();
                     }
                     ui.separator();
                     if ui.button("Add Entity").clicked() {
                         self.add_entity("Entity");
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Add 2D Sprite").clicked() {
                         self.add_sprite();
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Add Cube (3D)").clicked() {
                         self.add_mesh("cube", Dimension::D3);
-                        ui.close_menu();
+                        ui.close();
                     }
                     if ui.button("Add Point Light").clicked() {
                         self.add_point_light();
-                        ui.close_menu();
+                        ui.close();
                     }
                 });
                 ui.menu_button("Project", |ui| {
                     if let Some(dir) = self.project_dir.clone() {
                         if ui.button("Export Game…").clicked() {
                             self.export_game(&dir);
-                            ui.close_menu();
+                            ui.close();
                         }
                         ui.label(format!("dir: {}", dir.display()));
                     } else {
@@ -443,7 +492,10 @@ impl Editor {
         let mut world = std::mem::take(&mut self.engine.scene.world);
         let registry = &self.engine.registry;
         {
-            let mut cmd_ctx = CommandCtx { world: &mut world, registry };
+            let mut cmd_ctx = CommandCtx {
+                world: &mut world,
+                registry,
+            };
             if let Some(label) = self.undo.undo(&mut cmd_ctx) {
                 self.log("info", &format!("undo: {label}"));
             }
@@ -456,7 +508,10 @@ impl Editor {
         let mut world = std::mem::take(&mut self.engine.scene.world);
         let registry = &self.engine.registry;
         {
-            let mut cmd_ctx = CommandCtx { world: &mut world, registry };
+            let mut cmd_ctx = CommandCtx {
+                world: &mut world,
+                registry,
+            };
             if let Some(label) = self.undo.redo(&mut cmd_ctx) {
                 self.log("info", &format!("redo: {label}"));
             }

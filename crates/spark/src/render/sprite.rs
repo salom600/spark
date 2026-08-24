@@ -25,16 +25,38 @@ struct QuadVert {
 }
 
 const QUAD: [QuadVert; 6] = [
-    QuadVert { pos: [-0.5, -0.5], uv: [0.0, 1.0] },
-    QuadVert { pos: [0.5, -0.5], uv: [1.0, 1.0] },
-    QuadVert { pos: [0.5, 0.5], uv: [1.0, 0.0] },
-    QuadVert { pos: [-0.5, -0.5], uv: [0.0, 1.0] },
-    QuadVert { pos: [0.5, 0.5], uv: [1.0, 0.0] },
-    QuadVert { pos: [-0.5, 0.5], uv: [0.0, 0.0] },
+    QuadVert {
+        pos: [-0.5, -0.5],
+        uv: [0.0, 1.0],
+    },
+    QuadVert {
+        pos: [0.5, -0.5],
+        uv: [1.0, 1.0],
+    },
+    QuadVert {
+        pos: [0.5, 0.5],
+        uv: [1.0, 0.0],
+    },
+    QuadVert {
+        pos: [-0.5, -0.5],
+        uv: [0.0, 1.0],
+    },
+    QuadVert {
+        pos: [0.5, 0.5],
+        uv: [1.0, 0.0],
+    },
+    QuadVert {
+        pos: [-0.5, 0.5],
+        uv: [0.0, 0.0],
+    },
 ];
 
 impl SpritePass {
-    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat, globals_bgl: &wgpu::BindGroupLayout) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        globals_bgl: &wgpu::BindGroupLayout,
+    ) -> Self {
         let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/sprite.wgsl"));
         let mat_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("spark.sprite.mat"),
@@ -111,7 +133,13 @@ impl SpritePass {
             contents: bytemuck::cast_slice(&QUAD),
             usage: wgpu::BufferUsages::VERTEX,
         });
-        Self { pipeline, mat_bgl, quad, instance_buf: None, instance_cap: 0 }
+        Self {
+            pipeline,
+            mat_bgl,
+            quad,
+            instance_buf: None,
+            instance_cap: 0,
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -128,7 +156,11 @@ impl SpritePass {
     ) {
         // wgpu handles are cheaply cloneable; clone ends the &mut self borrow.
         let needed = instances.len() as u64;
-        if self.instance_buf.as_ref().is_none_or(|_| self.instance_cap < needed) {
+        if self
+            .instance_buf
+            .as_ref()
+            .is_none_or(|_| self.instance_cap < needed)
+        {
             let cap = needed.max(4096);
             self.instance_buf = Some(device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("spark.sprite.instances"),
@@ -144,14 +176,23 @@ impl SpritePass {
         let globals = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("spark.sprite.globals"),
             layout: globals_bgl,
-            entries: &[wgpu::BindGroupEntry { binding: 0, resource: globals_buf.as_entire_binding() }],
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: globals_buf.as_entire_binding(),
+            }],
         });
         let material = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("spark.sprite.mat"),
             layout: &self.mat_bgl,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(tex_view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(sampler) },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(tex_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(sampler),
+                },
             ],
         });
 
@@ -160,6 +201,9 @@ impl SpritePass {
         rpass.set_bind_group(1, &material, &[]);
         rpass.set_vertex_buffer(0, self.quad.slice(..));
         rpass.set_vertex_buffer(1, buf.slice(..instances.len() as u64));
-        rpass.draw(0..6, 0..(instances.len() / std::mem::size_of::<SpriteInstance>()) as u32);
+        rpass.draw(
+            0..6,
+            0..(instances.len() / std::mem::size_of::<SpriteInstance>()) as u32,
+        );
     }
 }

@@ -1,0 +1,29 @@
+// Blank scene: one camera + one light, ready to build on.
+(
+    name: "Main",
+    dimension: D2,
+    ambient: 0.35,
+    sky: (r: 0.07, g: 0.08, b: 0.1, a: 1.0),
+    globals: {},
+    entities: [
+        (
+            name: Some("Camera"),
+            transform: Some(( position: (0.0, 0.0, 10.0), )),
+            components: [ Camera((
+                kind: Ortho2D(height: 10.0),
+                clear: (r: 0.07, g: 0.08, b: 0.1, a: 1.0),
+                near: 0.1,
+                far: 1000.0,
+            )) ],
+        ),
+        (
+            name: Some("Sun"),
+            transform: Some(( position: (0.0, 0.0, 0.0), )),
+            components: [ Light((
+                kind: Directional(direction: (-0.5, -1.0, -0.3)),
+                color: (r: 1.0, g: 1.0, b: 1.0, a: 1.0),
+                intensity: 1.0,
+            )) ],
+        ),
+    ],
+)

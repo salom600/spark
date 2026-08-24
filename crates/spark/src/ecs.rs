@@ -14,8 +14,8 @@
 use std::collections::HashMap;
 
 use hecs::{Entity, World};
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use crate::math::{Color, Vec2, Vec3, Vec4};
 
@@ -23,7 +23,9 @@ use crate::math::{Color, Vec2, Vec3, Vec4};
 ///
 /// Derive it with `#[derive(ComponentDef)]` from `spark_macros`; you will also
 /// want `Clone, Default, Serialize, Deserialize` on the same type.
-pub trait ComponentDef: Clone + Default + Serialize + DeserializeOwned + Send + Sync + 'static {
+pub trait ComponentDef:
+    Clone + Default + Serialize + DeserializeOwned + Send + Sync + 'static
+{
     /// Wire name used in scene files and editor menus (e.g. `"Sprite"`).
     const NAME: &'static str;
 
@@ -61,12 +63,14 @@ impl Inspect for f64 {
 }
 impl Inspect for u32 {
     fn inspect(&mut self, ui: &mut egui::Ui) -> bool {
-        ui.add(egui::DragValue::new(self).range(0..=u32::MAX)).changed()
+        ui.add(egui::DragValue::new(self).range(0..=u32::MAX))
+            .changed()
     }
 }
 impl Inspect for usize {
     fn inspect(&mut self, ui: &mut egui::Ui) -> bool {
-        ui.add(egui::DragValue::new(self).range(0..=usize::MAX)).changed()
+        ui.add(egui::DragValue::new(self).range(0..=usize::MAX))
+            .changed()
     }
 }
 impl Inspect for bool {
@@ -129,7 +133,12 @@ impl Inspect for Color {
         let mut c = [self.r, self.g, self.b, self.a];
         let changed = ui.color_edit_button_rgba_unmultiplied(&mut c).changed();
         if changed {
-            *self = Color { r: c[0], g: c[1], b: c[2], a: c[3] };
+            *self = Color {
+                r: c[0],
+                g: c[1],
+                b: c[2],
+                a: c[3],
+            };
         }
         changed
     }
@@ -141,7 +150,11 @@ impl<T: Inspect + Clone + Default> Inspect for Option<T> {
             let mut on = self.is_some();
             if ui.checkbox(&mut on, "").changed() {
                 let owned = self.clone();
-                *self = if on { Some(owned.unwrap_or_default()) } else { None };
+                *self = if on {
+                    Some(owned.unwrap_or_default())
+                } else {
+                    None
+                };
                 c = true;
             }
             if let Some(v) = self {
@@ -180,7 +193,11 @@ impl Registry {
         let entry = ComponentEntry {
             name: T::NAME,
             has: |w, e| w.get::<&T>(e).is_ok(),
-            save: |w, e| w.get::<&T>(e).ok().map(|c| ron::to_string(&*c).unwrap_or_default()),
+            save: |w, e| {
+                w.get::<&T>(e)
+                    .ok()
+                    .map(|c| ron::to_string(&*c).unwrap_or_default())
+            },
             load: |w, e, s| {
                 let c: T = ron::from_str(s)?;
                 w.insert_one(e, c)?;
@@ -285,7 +302,10 @@ pub fn set_parent(world: &mut World, child: Entity, parent: Option<Entity>) {
 
 /// All direct children of `e`.
 pub fn children(world: &World, e: Entity) -> Vec<Entity> {
-    world.get::<&Children>(e).map(|c| c.0.clone()).unwrap_or_default()
+    world
+        .get::<&Children>(e)
+        .map(|c| c.0.clone())
+        .unwrap_or_default()
 }
 
 /// Depth-first descendant list (excluding `e`).
@@ -327,11 +347,7 @@ pub fn find_by_tag(world: &World, tag: &str) -> Option<Entity> {
 
 /// Entities that have no `Parent` (hierarchy roots), in stable spawn order.
 pub fn roots(world: &World) -> Vec<Entity> {
-    let mut with_parent: Vec<Entity> = world
-        .query::<&Parent>()
-        .iter()
-        .map(|(e, _)| e)
-        .collect();
+    let mut with_parent: Vec<Entity> = world.query::<&Parent>().iter().map(|(e, _)| e).collect();
     with_parent.sort_unstable_by_key(|e| e.to_bits());
     let mut all: Vec<Entity> = world.iter().map(|er| er.entity()).collect();
     all.sort_unstable_by_key(|e| e.to_bits());
@@ -341,7 +357,10 @@ pub fn roots(world: &World) -> Vec<Entity> {
 
 /// Human label for an entity used by the editor tree.
 pub fn entity_label(world: &World, e: Entity) -> String {
-    world.get::<&Name>(e).map(|n| n.0.clone()).unwrap_or_else(|_| format!("Entity {}", e.to_bits().get()))
+    world
+        .get::<&Name>(e)
+        .map(|n| n.0.clone())
+        .unwrap_or_else(|_| format!("Entity {}", e.to_bits().get()))
 }
 
 #[cfg(test)]

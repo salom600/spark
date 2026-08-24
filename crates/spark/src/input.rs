@@ -156,15 +156,21 @@ impl Input {
     // -----------------------------------------------------------------------
 
     pub fn key_held(&self, name: &str) -> bool {
-        key_code(name).map(|k| self.keys_held.get(&k).copied().unwrap_or(false)).unwrap_or(false)
+        key_code(name)
+            .map(|k| self.keys_held.get(&k).copied().unwrap_or(false))
+            .unwrap_or(false)
     }
 
     pub fn key_pressed(&self, name: &str) -> bool {
-        key_code(name).map(|k| self.keys_pressed.contains_key(&k)).unwrap_or(false)
+        key_code(name)
+            .map(|k| self.keys_pressed.contains_key(&k))
+            .unwrap_or(false)
     }
 
     pub fn key_released(&self, name: &str) -> bool {
-        key_code(name).map(|k| self.keys_released.contains_key(&k)).unwrap_or(false)
+        key_code(name)
+            .map(|k| self.keys_released.contains_key(&k))
+            .unwrap_or(false)
     }
 
     pub fn mouse_held(&self, button: MouseButton) -> bool {
@@ -189,15 +195,21 @@ impl Input {
     // -----------------------------------------------------------------------
 
     pub fn action_held(&self, name: &str) -> bool {
-        self.actions.get(name).is_some_and(|bs| bs.iter().any(|b| self.binding_held(b)))
+        self.actions
+            .get(name)
+            .is_some_and(|bs| bs.iter().any(|b| self.binding_held(b)))
     }
 
     pub fn action_pressed(&self, name: &str) -> bool {
-        self.actions.get(name).is_some_and(|bs| bs.iter().any(|b| self.binding_pressed(b)))
+        self.actions
+            .get(name)
+            .is_some_and(|bs| bs.iter().any(|b| self.binding_pressed(b)))
     }
 
     pub fn action_released(&self, name: &str) -> bool {
-        self.actions.get(name).is_some_and(|bs| bs.iter().any(|b| self.binding_released(b)))
+        self.actions
+            .get(name)
+            .is_some_and(|bs| bs.iter().any(|b| self.binding_released(b)))
     }
 
     fn binding_held(&self, b: &Binding) -> bool {
@@ -205,14 +217,19 @@ impl Input {
             Binding::Key(k) => self.key_held(k),
             Binding::Mouse(m) => mouse_button(m).map(|b| self.mouse_held(b)).unwrap_or(false),
             Binding::Pad(p) => self.pad_held.get(p).copied().unwrap_or(false),
-            Binding::Stick(s) => self.stick_active(s, self.pad_left, 0.5) || self.stick_active(s, self.pad_right, 0.5),
+            Binding::Stick(s) => {
+                self.stick_active(s, self.pad_left, 0.5)
+                    || self.stick_active(s, self.pad_right, 0.5)
+            }
         }
     }
 
     fn binding_pressed(&self, b: &Binding) -> bool {
         match b {
             Binding::Key(k) => self.key_pressed(k),
-            Binding::Mouse(m) => mouse_button(m).map(|b| self.mouse_pressed(b)).unwrap_or(false),
+            Binding::Mouse(m) => mouse_button(m)
+                .map(|b| self.mouse_pressed(b))
+                .unwrap_or(false),
             Binding::Pad(p) => self.pad_pressed.contains_key(p),
             Binding::Stick(_) => false, // edges are not tracked for sticks
         }
@@ -221,14 +238,19 @@ impl Input {
     fn binding_released(&self, b: &Binding) -> bool {
         match b {
             Binding::Key(k) => self.key_released(k),
-            Binding::Mouse(m) => mouse_button(m).map(|b| self.mouse_released(b)).unwrap_or(false),
+            Binding::Mouse(m) => mouse_button(m)
+                .map(|b| self.mouse_released(b))
+                .unwrap_or(false),
             Binding::Stick(_) => false,
             _ => false,
         }
     }
 
     fn stick_active(&self, name: &str, stick: Vec2, threshold: f32) -> bool {
-        match name.trim_start_matches("LeftStick").trim_start_matches("RightStick") {
+        match name
+            .trim_start_matches("LeftStick")
+            .trim_start_matches("RightStick")
+        {
             "Left" => stick.x < -threshold,
             "Right" => stick.x > threshold,
             "Up" => stick.y > threshold,
@@ -238,7 +260,9 @@ impl Input {
     }
 
     fn poll_gamepad(&mut self) {
-        let Some(gilrs) = self.gilrs.as_mut() else { return };
+        let Some(gilrs) = self.gilrs.as_mut() else {
+            return;
+        };
         while let Some(event) = gilrs.next_event() {
             use gilrs::ev::EventType as Et;
             match event.event {
@@ -326,24 +350,47 @@ fn key_code(name: &str) -> Option<KeyCode> {
 
 fn key_letter(c: u8) -> Option<KeyCode> {
     Some(match c {
-        b'A' => KeyCode::KeyA, b'B' => KeyCode::KeyB, b'C' => KeyCode::KeyC,
-        b'D' => KeyCode::KeyD, b'E' => KeyCode::KeyE, b'F' => KeyCode::KeyF,
-        b'G' => KeyCode::KeyG, b'H' => KeyCode::KeyH, b'I' => KeyCode::KeyI,
-        b'J' => KeyCode::KeyJ, b'K' => KeyCode::KeyK, b'L' => KeyCode::KeyL,
-        b'M' => KeyCode::KeyM, b'N' => KeyCode::KeyN, b'O' => KeyCode::KeyO,
-        b'P' => KeyCode::KeyP, b'Q' => KeyCode::KeyQ, b'R' => KeyCode::KeyR,
-        b'S' => KeyCode::KeyS, b'T' => KeyCode::KeyT, b'U' => KeyCode::KeyU,
-        b'V' => KeyCode::KeyV, b'W' => KeyCode::KeyW, b'X' => KeyCode::KeyX,
-        b'Y' => KeyCode::KeyY, b'Z' => KeyCode::KeyZ,
+        b'A' => KeyCode::KeyA,
+        b'B' => KeyCode::KeyB,
+        b'C' => KeyCode::KeyC,
+        b'D' => KeyCode::KeyD,
+        b'E' => KeyCode::KeyE,
+        b'F' => KeyCode::KeyF,
+        b'G' => KeyCode::KeyG,
+        b'H' => KeyCode::KeyH,
+        b'I' => KeyCode::KeyI,
+        b'J' => KeyCode::KeyJ,
+        b'K' => KeyCode::KeyK,
+        b'L' => KeyCode::KeyL,
+        b'M' => KeyCode::KeyM,
+        b'N' => KeyCode::KeyN,
+        b'O' => KeyCode::KeyO,
+        b'P' => KeyCode::KeyP,
+        b'Q' => KeyCode::KeyQ,
+        b'R' => KeyCode::KeyR,
+        b'S' => KeyCode::KeyS,
+        b'T' => KeyCode::KeyT,
+        b'U' => KeyCode::KeyU,
+        b'V' => KeyCode::KeyV,
+        b'W' => KeyCode::KeyW,
+        b'X' => KeyCode::KeyX,
+        b'Y' => KeyCode::KeyY,
+        b'Z' => KeyCode::KeyZ,
         _ => return None,
     })
 }
 
 fn key_digit(d: u8) -> Option<KeyCode> {
     Some(match d {
-        b'0' => KeyCode::Digit0, b'1' => KeyCode::Digit1, b'2' => KeyCode::Digit2,
-        b'3' => KeyCode::Digit3, b'4' => KeyCode::Digit4, b'5' => KeyCode::Digit5,
-        b'6' => KeyCode::Digit6, b'7' => KeyCode::Digit7, b'8' => KeyCode::Digit8,
+        b'0' => KeyCode::Digit0,
+        b'1' => KeyCode::Digit1,
+        b'2' => KeyCode::Digit2,
+        b'3' => KeyCode::Digit3,
+        b'4' => KeyCode::Digit4,
+        b'5' => KeyCode::Digit5,
+        b'6' => KeyCode::Digit6,
+        b'7' => KeyCode::Digit7,
+        b'8' => KeyCode::Digit8,
         b'9' => KeyCode::Digit9,
         _ => return None,
     })
@@ -351,8 +398,14 @@ fn key_digit(d: u8) -> Option<KeyCode> {
 
 fn key_fn(f: u8) -> Option<KeyCode> {
     Some(match f {
-        1 => KeyCode::F1, 2 => KeyCode::F2, 3 => KeyCode::F3, 4 => KeyCode::F4,
-        5 => KeyCode::F5, 6 => KeyCode::F6, 7 => KeyCode::F7, 8 => KeyCode::F8,
+        1 => KeyCode::F1,
+        2 => KeyCode::F2,
+        3 => KeyCode::F3,
+        4 => KeyCode::F4,
+        5 => KeyCode::F5,
+        6 => KeyCode::F6,
+        7 => KeyCode::F7,
+        8 => KeyCode::F8,
         9 => KeyCode::F9,
         _ => return None,
     })
@@ -417,7 +470,10 @@ mod tests {
     fn actions() {
         let mut i = Input::new();
         let mut map = HashMap::new();
-        map.insert("jump".to_string(), vec![Binding::Key("Space".into()), Binding::Pad("South".into())]);
+        map.insert(
+            "jump".to_string(),
+            vec![Binding::Key("Space".into()), Binding::Pad("South".into())],
+        );
         i.set_actions(map);
         i.end_frame();
         i.on_key(KeyCode::Space, ElementState::Pressed);

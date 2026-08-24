@@ -34,7 +34,11 @@ pub enum RuleEvent {
     /// Fires every simulation tick.
     Update,
     /// Fires every `secs` seconds (or once when `repeat` is false).
-    Timer { secs: f32, #[serde(default = "yes")] repeat: bool },
+    Timer {
+        secs: f32,
+        #[serde(default = "yes")]
+        repeat: bool,
+    },
     /// Physical key name (`"Space"`, `"KeyA"`, `"ArrowLeft"`).
     KeyPressed(String),
     KeyHeld(String),
@@ -42,8 +46,14 @@ pub enum RuleEvent {
     /// Named action from the project's input bindings.
     ActionPressed(String),
     /// Collisions with an optional partner tag filter.
-    CollisionEnter { #[serde(default)] other: Option<String> },
-    CollisionExit { #[serde(default)] other: Option<String> },
+    CollisionEnter {
+        #[serde(default)]
+        other: Option<String>,
+    },
+    CollisionExit {
+        #[serde(default)]
+        other: Option<String>,
+    },
     /// Global broadcast (arrives the frame after it is sent).
     Message(String),
     /// Mouse clicked inside the entity's 2D sprite bounds.
@@ -87,10 +97,19 @@ impl CmpOp {
 pub enum Cond {
     /// Fire at most once per entity lifetime.
     Once,
+    /// True while the named physical key is held.
+    KeyHeld(String),
+    /// True while the named physical key is NOT held.
+    KeyNotHeld(String),
     /// At most once per `f32` seconds.
     Cooldown(f32),
     /// Compare a variable (entity-local or global).
-    Var { scope: VarScope, name: String, op: CmpOp, value: f64 },
+    Var {
+        scope: VarScope,
+        name: String,
+        op: CmpOp,
+        value: f64,
+    },
     /// Fire with probability `p` (deterministic per entity/frame).
     Chance(f32),
 }
@@ -101,20 +120,69 @@ pub enum Action {
     DestroySelf,
     /// Destroy the collision partner (only valid in collision rules).
     DestroyOther,
+    /// Destroy every entity carrying this tag (useful for resets).
+    DestroyTagged(String),
     /// Spawn a prefab (`.ron` entity record) relative to this entity.
-    Spawn { prefab: String, #[serde(default)] offset: Vec3 },
-    SetVelocity { v: Vec3, #[serde(default)] relative: bool },
-    ApplyImpulse { v: Vec3 },
-    Translate { by: Vec3 },
-    Rotate { by_deg: Vec3 },
+    Spawn {
+        prefab: String,
+        #[serde(default)]
+        offset: Vec3,
+    },
+    SetVelocity {
+        v: Vec3,
+        #[serde(default)]
+        relative: bool,
+    },
+    /// Set only the horizontal component of velocity (keeps fall speed).
+    SetVelX {
+        x: f32,
+    },
+    /// Set only the vertical component of velocity (jumping).
+    SetVelY {
+        y: f32,
+    },
+    /// Teleport (absolute position, wakes the body).
+    Teleport {
+        to: Vec3,
+    },
+    ApplyImpulse {
+        v: Vec3,
+    },
+    Translate {
+        by: Vec3,
+    },
+    Rotate {
+        by_deg: Vec3,
+    },
     SetColor(Color),
-    SetVar { scope: VarScope, name: String, value: f64 },
-    AddVar { scope: VarScope, name: String, delta: f64 },
-    PlaySound { sound: String, #[serde(default = "default_vol")] volume: f32 },
-    PlayMusic { track: String, #[serde(default = "default_vol")] volume: f32 },
+    SetVar {
+        scope: VarScope,
+        name: String,
+        value: f64,
+    },
+    AddVar {
+        scope: VarScope,
+        name: String,
+        delta: f64,
+    },
+    PlaySound {
+        sound: String,
+        #[serde(default = "default_vol")]
+        volume: f32,
+    },
+    PlayMusic {
+        track: String,
+        #[serde(default = "default_vol")]
+        volume: f32,
+    },
     StopMusic,
-    SetGravity { g: Vec3 },
-    CameraFollowMe { #[serde(default = "default_lerp")] lerp: f32 },
+    SetGravity {
+        g: Vec3,
+    },
+    CameraFollowMe {
+        #[serde(default = "default_lerp")]
+        lerp: f32,
+    },
     /// Load another scene (project-relative path) at the end of the tick.
     LoadScene(String),
     /// Broadcast a message; other entities receive it next tick.
@@ -154,7 +222,9 @@ impl RuleEvent {
         match self {
             RuleEvent::Start => "Start".into(),
             RuleEvent::Update => "Update".into(),
-            RuleEvent::Timer { secs, repeat } => format!("Timer {secs}s{}", if *repeat { " ∞" } else { "" }),
+            RuleEvent::Timer { secs, repeat } => {
+                format!("Timer {secs}s{}", if *repeat { " ∞" } else { "" })
+            }
             RuleEvent::KeyPressed(k) => format!("Key {k} pressed"),
             RuleEvent::KeyHeld(k) => format!("Key {k} held"),
             RuleEvent::KeyReleased(k) => format!("Key {k} released"),
@@ -276,7 +346,12 @@ pub fn run_rules(
             RuleEvent::Start => rt.fresh.contains(&entity),
             RuleEvent::Update => true,
             RuleEvent::Timer { secs, repeat } => {
-                if rt.timer_done.get(&(entity, idx as u32)).copied().unwrap_or(false) {
+                if rt
+                    .timer_done
+                    .get(&(entity, idx as u32))
+                    .copied()
+                    .unwrap_or(false)
+                {
                     false
                 } else {
                     let t = rt.timers.entry((entity, idx as u32)).or_insert(0.0);
@@ -317,7 +392,13 @@ pub fn run_rules(
         let mut ok = true;
         for cond in &rule.when {
             ok &= match cond {
-                Cond::Once => !rt.fired_once.get(&(entity, idx as u32)).copied().unwrap_or(false),
+                Cond::Once => !rt
+                    .fired_once
+                    .get(&(entity, idx as u32))
+                    .copied()
+                    .unwrap_or(false),
+                Cond::KeyHeld(k) => input.key_held(k),
+                Cond::KeyNotHeld(k) => !input.key_held(k),
                 Cond::Cooldown(secs) => {
                     let c = rt.cooldowns.entry((entity, idx as u32)).or_insert(0.0);
                     *c <= 0.0 && {
@@ -325,7 +406,12 @@ pub fn run_rules(
                         true
                     }
                 }
-                Cond::Var { scope, name, op, value } => {
+                Cond::Var {
+                    scope,
+                    name,
+                    op,
+                    value,
+                } => {
                     let v = read_var(ctx.world, ctx.globals, entity, *scope, name);
                     op.check(v, *value)
                 }
@@ -378,7 +464,10 @@ fn hit_partner(
             continue;
         };
         let tag_matches = match tag_filter {
-            Some(t) => world.get::<&crate::ecs::Tag>(partner).map(|tag| tag.0 == *t).unwrap_or(false),
+            Some(t) => world
+                .get::<&crate::ecs::Tag>(partner)
+                .map(|tag| tag.0 == *t)
+                .unwrap_or(false),
             None => true,
         };
         if tag_matches {
@@ -401,7 +490,10 @@ fn partner_of(collisions: &[CollisionPair], entity: Entity) -> Option<Entity> {
 }
 
 fn clicked_entity(world: &World, entity: Entity, mouse: crate::math::Vec2) -> bool {
-    let (Ok(tr), Ok(sp)) = (world.get::<&crate::components::Transform>(entity), world.get::<&crate::components::Sprite>(entity)) else {
+    let (Ok(tr), Ok(sp)) = (
+        world.get::<&crate::components::Transform>(entity),
+        world.get::<&crate::components::Sprite>(entity),
+    ) else {
         return false;
     };
     let half = sp.size * tr.scale.truncate() * 0.5;
@@ -412,7 +504,13 @@ fn clicked_entity(world: &World, entity: Entity, mouse: crate::math::Vec2) -> bo
         && mouse.y <= p.y + half.y
 }
 
-fn read_var(world: &World, globals: &HashMap<String, f64>, e: Entity, scope: VarScope, name: &str) -> f64 {
+fn read_var(
+    world: &World,
+    globals: &HashMap<String, f64>,
+    e: Entity,
+    scope: VarScope,
+    name: &str,
+) -> f64 {
     match scope {
         VarScope::Global => globals.get(name).copied().unwrap_or(0.0),
         VarScope::Entity => world
@@ -422,7 +520,14 @@ fn read_var(world: &World, globals: &HashMap<String, f64>, e: Entity, scope: Var
     }
 }
 
-fn write_var(world: &mut World, globals: &mut HashMap<String, f64>, e: Entity, scope: VarScope, name: &str, f: impl Fn(f64) -> f64) {
+fn write_var(
+    world: &mut World,
+    globals: &mut HashMap<String, f64>,
+    e: Entity,
+    scope: VarScope,
+    name: &str,
+    f: impl Fn(f64) -> f64,
+) {
     match scope {
         VarScope::Global => {
             let v = globals.entry(name.to_string()).or_insert(0.0);
@@ -447,20 +552,44 @@ fn run_action(ctx: &mut ActionCtx, action: &Action) {
             }
         }
         Action::DestroyOther => {
-            if let Some(o) = ctx.other {
-                if !ctx.destroy_queue.contains(&o) {
-                    ctx.destroy_queue.push(o);
+            if let Some(o) = ctx.other
+                && !ctx.destroy_queue.contains(&o)
+            {
+                ctx.destroy_queue.push(o);
+            }
+        }
+        Action::DestroyTagged(tag) => {
+            let tagged: Vec<Entity> = ctx
+                .world
+                .query::<&crate::ecs::Tag>()
+                .iter()
+                .filter(|(_, t)| t.0 == *tag)
+                .map(|(e, _)| e)
+                .collect();
+            for t in tagged {
+                if !ctx.destroy_queue.contains(&t) {
+                    ctx.destroy_queue.push(t);
                 }
             }
         }
         Action::Spawn { prefab, offset } => {
-            if let Some(e) = crate::scene::spawn_prefab(ctx.world, ctx.assets, prefab, Some(entity), *offset) {
+            if let Some(e) =
+                crate::scene::spawn_prefab(ctx.world, ctx.assets, prefab, Some(entity), *offset)
+            {
                 ctx.spawned.push(e);
             } else {
                 log::warn!("[rules] prefab not found: {prefab}");
             }
         }
         Action::SetVelocity { v, relative } => ctx.physics.set_velocity(entity, *v, *relative),
+        Action::SetVelX { x } => ctx.physics.set_vel_x(entity, *x),
+        Action::SetVelY { y } => ctx.physics.set_vel_y(entity, *y),
+        Action::Teleport { to } => {
+            if let Ok(mut t) = ctx.world.get::<&mut crate::components::Transform>(entity) {
+                t.position = *to;
+            }
+            ctx.physics.teleport(entity, *to);
+        }
         Action::ApplyImpulse { v } => ctx.physics.apply_impulse(entity, *v),
         Action::Translate { by } => {
             if let Ok(mut t) = ctx.world.get::<&mut crate::components::Transform>(entity) {
@@ -570,8 +699,18 @@ mod tests {
             }
         }
 
-        fn run(&mut self, world: &mut World, e: Entity, collisions: &[CollisionPair], input: &crate::input::Input, dt: f32) {
-            let rules: Vec<Rule> = world.get::<&RulesComp>(e).map(|r| r.rules.clone()).unwrap_or_default();
+        fn run(
+            &mut self,
+            world: &mut World,
+            e: Entity,
+            collisions: &[CollisionPair],
+            input: &crate::input::Input,
+            dt: f32,
+        ) {
+            let rules: Vec<Rule> = world
+                .get::<&RulesComp>(e)
+                .map(|r| r.rules.clone())
+                .unwrap_or_default();
             let mut ctx = ActionCtx {
                 world,
                 globals: &mut self.globals,
@@ -609,7 +748,10 @@ mod tests {
         ));
 
         let mut input = crate::input::Input::new();
-        input.on_key(winit::keyboard::KeyCode::Space, winit::event::ElementState::Pressed);
+        input.on_key(
+            winit::keyboard::KeyCode::Space,
+            winit::event::ElementState::Pressed,
+        );
 
         let mut h = Harness::new();
         h.run(&mut world, e, &[], &input, 0.016);
@@ -620,18 +762,40 @@ mod tests {
     fn collision_destroy_other() {
         let mut world = World::default();
         let coin = world.spawn((crate::ecs::Tag("coin".into()), Transform::default()));
-        let player = world.spawn((Transform::default(), RulesComp {
-            rules: vec![Rule {
-                on: RuleEvent::CollisionEnter { other: Some("coin".to_string()) },
-                when: vec![],
-                run: vec![Action::DestroyOther, Action::AddVar { scope: VarScope::Global, name: "coins".to_string(), delta: 1.0 }],
-                enabled: true,
-            }],
-        }));
+        let player = world.spawn((
+            Transform::default(),
+            RulesComp {
+                rules: vec![Rule {
+                    on: RuleEvent::CollisionEnter {
+                        other: Some("coin".to_string()),
+                    },
+                    when: vec![],
+                    run: vec![
+                        Action::DestroyOther,
+                        Action::AddVar {
+                            scope: VarScope::Global,
+                            name: "coins".to_string(),
+                            delta: 1.0,
+                        },
+                    ],
+                    enabled: true,
+                }],
+            },
+        ));
 
-        let pairs = vec![CollisionPair { a: player, b: coin, started: true }];
+        let pairs = vec![CollisionPair {
+            a: player,
+            b: coin,
+            started: true,
+        }];
         let mut h = Harness::new();
-        h.run(&mut world, player, &pairs, &crate::input::Input::new(), 0.016);
+        h.run(
+            &mut world,
+            player,
+            &pairs,
+            &crate::input::Input::new(),
+            0.016,
+        );
         for d in h.destroy_queue.clone() {
             let _ = world.despawn(d);
         }
@@ -642,22 +806,32 @@ mod tests {
     #[test]
     fn timer_and_message() {
         let mut world = World::default();
-        let e = world.spawn((Transform::default(), RulesComp {
-            rules: vec![
-                Rule {
-                    on: RuleEvent::Timer { secs: 0.5, repeat: false },
-                    when: vec![],
-                    run: vec![Action::SendMessage("tick".into())],
-                    enabled: true,
-                },
-                Rule {
-                    on: RuleEvent::Message("tick".to_string()),
-                    when: vec![Cond::Once],
-                    run: vec![Action::SetVar { scope: VarScope::Global, name: "done".to_string(), value: 1.0 }],
-                    enabled: true,
-                },
-            ],
-        }));
+        let e = world.spawn((
+            Transform::default(),
+            RulesComp {
+                rules: vec![
+                    Rule {
+                        on: RuleEvent::Timer {
+                            secs: 0.5,
+                            repeat: false,
+                        },
+                        when: vec![],
+                        run: vec![Action::SendMessage("tick".into())],
+                        enabled: true,
+                    },
+                    Rule {
+                        on: RuleEvent::Message("tick".to_string()),
+                        when: vec![Cond::Once],
+                        run: vec![Action::SetVar {
+                            scope: VarScope::Global,
+                            name: "done".to_string(),
+                            value: 1.0,
+                        }],
+                        enabled: true,
+                    },
+                ],
+            },
+        ));
 
         let mut h = Harness::new();
         let empty = crate::input::Input::new();

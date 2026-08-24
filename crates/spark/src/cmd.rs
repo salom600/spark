@@ -29,7 +29,11 @@ pub struct CommandStack {
 
 impl Default for CommandStack {
     fn default() -> Self {
-        Self { undo: Vec::new(), redo: Vec::new(), limit: 256 }
+        Self {
+            undo: Vec::new(),
+            redo: Vec::new(),
+            limit: 256,
+        }
     }
 }
 

@@ -16,7 +16,10 @@ use hecs::World;
 use serde::{Deserialize, Serialize};
 
 use crate::assets::Assets;
-use crate::components::{Camera, Collider, Light, MeshRenderer, Music, RulesComp, RigidBody, Sprite, Transform, Vars, Visible};
+use crate::components::{
+    Camera, Collider, Light, MeshRenderer, Music, RigidBody, RulesComp, Sprite, Transform, Vars,
+    Visible,
+};
 use crate::ecs::{self, Registry};
 use crate::math::Color;
 
@@ -116,7 +119,8 @@ impl Scene {
             globals: self.globals.clone(),
             entities: self.records(registry),
         };
-        ron::ser::to_string_pretty(&data, ron::ser::PrettyConfig::default().struct_names(true)).unwrap_or_default()
+        ron::ser::to_string_pretty(&data, ron::ser::PrettyConfig::default().struct_names(true))
+            .unwrap_or_default()
     }
 
     fn records(&self, registry: &Registry) -> Vec<EntityRecord> {
@@ -128,16 +132,20 @@ impl Scene {
 
     fn record_of(&self, e: hecs::Entity, registry: &Registry) -> EntityRecord {
         let world = &self.world;
-        let transform = world.get::<&Transform>(e).ok().map(|t| (*t).clone());
+        let transform = world.get::<&Transform>(e).ok().map(|t| *t);
         let mut components = Vec::new();
         for entry in &registry.entries {
             if entry.name == "Transform" || !(entry.has)(world, e) {
                 continue;
             }
-            let Some(text) = (entry.save)(world, e) else { continue };
+            let Some(text) = (entry.save)(world, e) else {
+                continue;
+            };
             let value = match entry.name {
                 "Sprite" => ComponentData::Sprite(ron::from_str(&text).unwrap_or_default()),
-                "MeshRenderer" => ComponentData::MeshRenderer(ron::from_str(&text).unwrap_or_default()),
+                "MeshRenderer" => {
+                    ComponentData::MeshRenderer(ron::from_str(&text).unwrap_or_default())
+                }
                 "Camera" => ComponentData::Camera(ron::from_str(&text).unwrap_or_default()),
                 "Light" => ComponentData::Light(ron::from_str(&text).unwrap_or_default()),
                 "RigidBody" => ComponentData::RigidBody(ron::from_str(&text).unwrap_or_default()),
@@ -180,19 +188,29 @@ impl Scene {
     }
 
     /// Spawn one entity record (with children) and return its entity id.
-    pub fn spawn_record(&mut self, rec: &EntityRecord, parent: Option<hecs::Entity>, registry: &Registry) -> hecs::Entity {
+    pub fn spawn_record(
+        &mut self,
+        rec: &EntityRecord,
+        parent: Option<hecs::Entity>,
+        registry: &Registry,
+    ) -> hecs::Entity {
         spawn_record_world(&mut self.world, rec, parent, registry)
     }
 }
 
 /// Spawn an entity record (with children) into any world.
-pub fn spawn_record_world(world: &mut World, rec: &EntityRecord, parent: Option<hecs::Entity>, registry: &Registry) -> hecs::Entity {
+pub fn spawn_record_world(
+    world: &mut World,
+    rec: &EntityRecord,
+    parent: Option<hecs::Entity>,
+    registry: &Registry,
+) -> hecs::Entity {
     let e = world.spawn((ecs::Name(rec.name.clone().unwrap_or_default()),));
     if let Some(tag) = &rec.tag {
         world.insert_one(e, ecs::Tag(tag.clone())).ok();
     }
     if let Some(t) = &rec.transform {
-        world.insert_one(e, t.clone()).ok();
+        world.insert_one(e, *t).ok();
     }
     for comp in &rec.components {
         apply_component(world, e, comp, registry);
@@ -215,10 +233,10 @@ fn apply_component(world: &mut World, e: hecs::Entity, comp: &ComponentData, reg
             world.insert_one(e, c.clone()).ok();
         }
         ComponentData::Camera(c) => {
-            world.insert_one(e, c.clone()).ok();
+            world.insert_one(e, *c).ok();
         }
         ComponentData::Light(c) => {
-            world.insert_one(e, c.clone()).ok();
+            world.insert_one(e, *c).ok();
         }
         ComponentData::RigidBody(c) => {
             world.insert_one(e, c.clone()).ok();
@@ -260,10 +278,10 @@ pub fn spawn_prefab(
     let fs = assets.root().join(path);
     let text = std::fs::read_to_string(fs).ok()?;
     let mut rec: EntityRecord = ron::from_str(&text).ok()?;
-    if offset != crate::math::Vec3::ZERO {
-        if let Some(t) = &mut rec.transform {
-            t.position += offset;
-        }
+    if offset != crate::math::Vec3::ZERO
+        && let Some(t) = &mut rec.transform
+    {
+        t.position += offset;
     }
     let registry = default_registry();
     Some(spawn_record_world(world, &rec, parent, &registry))
@@ -296,11 +314,20 @@ mod tests {
         let parent = scene.world.spawn((
             ecs::Name("Player".into()),
             ecs::Tag("player".into()),
-            Transform { position: crate::math::Vec3::new(1.0, 2.0, 0.0), ..Default::default() },
-            Sprite { image: "assets/player.png".into(), color: Color::RED, size: Vec2::new(2.0, 2.0) },
+            Transform {
+                position: crate::math::Vec3::new(1.0, 2.0, 0.0),
+                ..Default::default()
+            },
+            Sprite {
+                image: "assets/player.png".into(),
+                color: Color::RED,
+                size: Vec2::new(2.0, 2.0),
+            },
             Vars(HashMap::from([("hp".to_string(), 5.0)])),
         ));
-        let child = scene.world.spawn((ecs::Name("Hat".into()), Transform::default()));
+        let child = scene
+            .world
+            .spawn((ecs::Name("Hat".into()), Transform::default()));
         ecs::set_parent(&mut scene.world, child, Some(parent));
         scene.globals.insert("score".to_string(), 42.0);
 
@@ -311,7 +338,10 @@ mod tests {
         assert!(loaded.world.get::<&Sprite>(player).is_ok());
         assert_eq!(loaded.world.get::<&Vars>(player).unwrap().0["hp"], 5.0);
         let hat = ecs::find_by_name(&loaded.world, "Hat").unwrap();
-        assert_eq!(ecs::find_by_name(&loaded.world, "Player").unwrap(), loaded.world.get::<&ecs::Parent>(hat).unwrap().0);
+        assert_eq!(
+            ecs::find_by_name(&loaded.world, "Player").unwrap(),
+            loaded.world.get::<&ecs::Parent>(hat).unwrap().0
+        );
     }
 
     #[test]
@@ -320,12 +350,16 @@ mod tests {
         // Custom path preserves it.
         use serde::{Deserialize, Serialize};
         #[derive(Clone, Debug, Default, Serialize, Deserialize, spark_macros::ComponentDef)]
-        struct UserScore { pub score: f32 }
+        struct UserScore {
+            pub score: f32,
+        }
 
         let mut registry = default_registry();
         registry.register::<UserScore>();
         let mut scene = Scene::default();
-        let e = scene.world.spawn((ecs::Name("Thing".into()), UserScore { score: 7.5 }));
+        let e = scene
+            .world
+            .spawn((ecs::Name("Thing".into()), UserScore { score: 7.5 }));
         let _ = e;
         let text = scene.save(&registry);
         let loaded = Scene::load(&text, &registry).unwrap();

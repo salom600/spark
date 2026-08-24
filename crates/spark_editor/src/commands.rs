@@ -5,8 +5,8 @@
 //! world references.
 
 use spark::ecs::{self, Registry};
-use spark::reexport::hecs;
 use spark::prelude::*;
+use spark::reexport::hecs;
 
 use crate::Editor;
 
@@ -25,22 +25,22 @@ impl Command for SwapCommand {
         self.label.clone()
     }
     fn apply(&mut self, ctx: &mut CommandCtx) {
-        if let Some(text) = &self.after {
-            if let Some(entry) = ctx.registry.get(self.component) {
-                let _ = (entry.load)(&mut ctx.world, self.entity, text);
-            }
+        if let Some(text) = &self.after
+            && let Some(entry) = ctx.registry.get(self.component)
+        {
+            let _ = (entry.load)(ctx.world, self.entity, text);
         }
     }
     fn revert(&mut self, ctx: &mut CommandCtx) {
         match &self.before {
             Some(text) => {
                 if let Some(entry) = ctx.registry.get(self.component) {
-                    let _ = (entry.load)(&mut ctx.world, self.entity, text);
+                    let _ = (entry.load)(ctx.world, self.entity, text);
                 }
             }
             None => {
                 if let Some(entry) = ctx.registry.get(self.component) {
-                    (entry.remove)(&mut ctx.world, self.entity);
+                    (entry.remove)(ctx.world, self.entity);
                 }
             }
         }
@@ -64,10 +64,10 @@ impl Command for SpawnCommand {
         if let Some(_e) = self.entity {
             // Despawn branch: entity exists → remove it.
             if ctx.world.contains(_e) {
-                ecs::despawn_recursive(&mut ctx.world, _e);
+                ecs::despawn_recursive(ctx.world, _e);
             }
         } else {
-            let e = spark::scene::spawn_record_world(&mut ctx.world, &self.record, None, ctx.registry);
+            let e = spark::scene::spawn_record_world(ctx.world, &self.record, None, ctx.registry);
             self.entity = Some(e);
         }
     }
@@ -75,13 +75,13 @@ impl Command for SpawnCommand {
         if let Some((records, parent)) = &self.despawn_revert {
             // Respawn despawned entities.
             for rec in records {
-                spark::scene::spawn_record_world(&mut ctx.world, rec, *parent, ctx.registry);
+                spark::scene::spawn_record_world(ctx.world, rec, *parent, ctx.registry);
             }
             self.despawn_revert = None;
-        } else if let Some(e) = self.entity {
-            if ctx.world.contains(e) {
-                ecs::despawn_recursive(&mut ctx.world, e);
-            }
+        } else if let Some(e) = self.entity
+            && ctx.world.contains(e)
+        {
+            ecs::despawn_recursive(ctx.world, e);
         }
     }
 }
@@ -109,7 +109,10 @@ impl Editor {
         let e = world.spawn((
             spark::ecs::Name(mesh.to_string()),
             Transform::default(),
-            MeshRenderer { mesh: mesh.to_string(), ..Default::default() },
+            MeshRenderer {
+                mesh: mesh.to_string(),
+                ..Default::default()
+            },
         ));
         self.state.selected = Some(e);
     }
@@ -134,42 +137,45 @@ impl Editor {
         let rec = self.record_of(e, registry);
         let world = &mut self.engine.scene.world;
         let new = spark::scene::spawn_record_world(world, &rec, None, registry);
-        if let Some(name) = world.get::<&spark::ecs::Name>(new).ok().map(|n| format!("{} copy", n.0)) {
+        if let Some(name) = world
+            .get::<&spark::ecs::Name>(new)
+            .ok()
+            .map(|n| format!("{} copy", n.0))
+        {
             let _ = world.insert_one(new, spark::ecs::Name(name));
         }
         self.state.selected = Some(new);
     }
 
     fn record_of(&self, e: hecs::Entity, registry: &Registry) -> spark::scene::EntityRecord {
-        // Reuse the scene serializer for a faithful copy.
-        let scene_text = {
-            let mut mini = spark::scene::Scene::default();
-            // serialize the one entity by temporarily moving the world
-            // (records require &World).
-            let world = &self.engine.scene.world;
-            let mut record = spark::scene::EntityRecord::default();
-            record.name = world.get::<&spark::ecs::Name>(e).ok().map(|n| n.0.clone());
-            record.tag = world.get::<&spark::ecs::Tag>(e).ok().map(|t| t.0.clone());
-            record.transform = world.get::<&Transform>(e).ok().map(|t| *t);
-            let mut comps = Vec::new();
-            for entry in &registry.entries {
-                if !(entry.has)(world, e) {
-                    continue;
-                }
-                if let Some(text) = (entry.save)(world, e) {
-                    comps.push(spark::scene::ComponentData::Custom(entry.name.to_string(), text));
-                }
+        // Snapshot the entity (with every registered component) as a record.
+        let world = &self.engine.scene.world;
+        let mut comps = Vec::new();
+        for entry in &registry.entries {
+            if !(entry.has)(world, e) {
+                continue;
             }
-            record.components = comps;
-            let _ = mini;
-            record
-        };
-        scene_text
+            if let Some(text) = (entry.save)(world, e) {
+                comps.push(spark::scene::ComponentData::Custom(
+                    entry.name.to_string(),
+                    text,
+                ));
+            }
+        }
+        spark::scene::EntityRecord {
+            name: world.get::<&spark::ecs::Name>(e).ok().map(|n| n.0.clone()),
+            tag: world.get::<&spark::ecs::Tag>(e).ok().map(|t| t.0.clone()),
+            transform: world.get::<&Transform>(e).ok().map(|t| *t),
+            components: comps,
+            children: Vec::new(),
+        }
     }
 
     /// Despawn via undoable command (with subtree snapshot).
     pub(crate) fn despawn_selected(&mut self) {
-        let Some(target) = self.state.selected else { return };
+        let Some(target) = self.state.selected else {
+            return;
+        };
         if !self.engine.scene.world.contains(target) {
             return;
         }
@@ -192,7 +198,10 @@ impl Editor {
         let registry = &self.engine.registry;
         let mut w = std::mem::take(world);
         {
-            let mut ctx = CommandCtx { world: &mut w, registry };
+            let mut ctx = CommandCtx {
+                world: &mut w,
+                registry,
+            };
             self.undo.push(&mut ctx, Box::new(cmd));
             cmd = SpawnCommand {
                 label: "Delete Entity".into(),
@@ -235,7 +244,10 @@ impl Editor {
         let registry = &self.engine.registry;
         let mut world = std::mem::take(&mut self.engine.scene.world);
         {
-            let mut ctx = CommandCtx { world: &mut world, registry };
+            let mut ctx = CommandCtx {
+                world: &mut world,
+                registry,
+            };
             self.undo.push(&mut ctx, Box::new(cmd));
         }
         self.engine.scene.world = world;
@@ -255,7 +267,10 @@ impl Editor {
         };
         let out = dir.join("export");
         match Project::export(dir, &exe, &out) {
-            Ok(p) => self.log("info", &format!("exported to {} (copy this folder to share)", p.display())),
+            Ok(p) => self.log(
+                "info",
+                &format!("exported to {} (copy this folder to share)", p.display()),
+            ),
             Err(e) => self.log("error", &format!("export failed: {e}")),
         }
     }

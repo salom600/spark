@@ -12,7 +12,7 @@ pub mod gltf;
 mod mesh;
 mod sprite;
 
-pub use gltf::{import, RawNode};
+pub use gltf::{RawNode, import};
 use mesh::MeshPass;
 use sprite::SpritePass;
 use wgpu::util::DeviceExt;
@@ -23,7 +23,9 @@ use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3};
 
 use crate::assets::{AssetKind, Assets};
-use crate::components::{Camera, CameraKind, Light, LightKind, MeshRenderer, Sprite, Transform, Visible};
+use crate::components::{
+    Camera, CameraKind, Light, LightKind, MeshRenderer, Sprite, Transform, Visible,
+};
 use crate::math::Color;
 use crate::scene::Scene;
 
@@ -59,7 +61,7 @@ pub struct SpriteInstance {
 pub struct MeshInstance {
     pub model: [[f32; 4]; 4],
     pub color: [f32; 4],
-    pub params: [f32; 4],    // metallic, roughness, unlit, unused
+    pub params: [f32; 4], // metallic, roughness, unlit, unused
     pub emissive: [f32; 4],
 }
 
@@ -94,7 +96,7 @@ pub fn build_frame_draw(
         (c, tr)
     } else {
         match world.query::<(&Camera, &Transform)>().iter().next() {
-            Some((_, (c, t))) => (c.clone(), *t),
+            Some((_, (c, t))) => (*c, *t),
             None => return default_draw(scene),
         }
     };
@@ -125,7 +127,12 @@ pub fn build_frame_draw(
                     let d = direction.normalize_or_zero();
                     dir = Some((
                         [d.x, d.y, d.z, 1.0],
-                        [l.color.r * l.intensity, l.color.g * l.intensity, l.color.b * l.intensity, scene.ambient],
+                        [
+                            l.color.r * l.intensity,
+                            l.color.g * l.intensity,
+                            l.color.b * l.intensity,
+                            scene.ambient,
+                        ],
                     ));
                 }
             }
@@ -148,7 +155,8 @@ pub fn build_frame_draw(
     while points.len() < MAX_POINT_LIGHTS {
         points.push([0.0; 8]);
     }
-    let (dir_vec, dir_color) = dir.unwrap_or(([0.0, -1.0, 0.0, 0.0], [0.0, 0.0, 0.0, scene.ambient]));
+    let (dir_vec, dir_color) =
+        dir.unwrap_or(([0.0, -1.0, 0.0, 0.0], [0.0, 0.0, 0.0, scene.ambient]));
 
     // Shadow view-projection: ortho box around the camera target (fixed
     // radius in v1 — documented in DECISIONS.md §6).
@@ -204,12 +212,31 @@ pub fn build_frame_draw(
         let model = Mat4::from_scale_rotation_translation(t.scale, t.quat(), t.position);
         let instance = MeshInstance {
             model: model.to_cols_array_2d(),
-            color: [mr.material.albedo.r, mr.material.albedo.g, mr.material.albedo.b, mr.material.albedo.a],
-            params: [mr.material.metallic, mr.material.roughness, if mr.material.unlit { 1.0 } else { 0.0 }, 0.0],
-            emissive: [mr.material.emissive.r, mr.material.emissive.g, mr.material.emissive.b, 0.0],
+            color: [
+                mr.material.albedo.r,
+                mr.material.albedo.g,
+                mr.material.albedo.b,
+                mr.material.albedo.a,
+            ],
+            params: [
+                mr.material.metallic,
+                mr.material.roughness,
+                if mr.material.unlit { 1.0 } else { 0.0 },
+                0.0,
+            ],
+            emissive: [
+                mr.material.emissive.r,
+                mr.material.emissive.g,
+                mr.material.emissive.b,
+                0.0,
+            ],
         };
         let tex = mr.material.texture.clone().unwrap_or_default();
-        match draw.meshes.iter_mut().find(|(m, t, _)| *m == mr.mesh && *t == tex) {
+        match draw
+            .meshes
+            .iter_mut()
+            .find(|(m, t, _)| *m == mr.mesh && *t == tex)
+        {
             Some(g) => g.2.push(instance),
             None => draw.meshes.push((mr.mesh.clone(), tex, vec![instance])),
         }
@@ -392,7 +419,11 @@ impl<'window> Renderer<'window> {
 
         let shadow_tex = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("spark.shadow"),
-            size: wgpu::Extent3d { width: SHADOW_SIZE, height: SHADOW_SIZE, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: SHADOW_SIZE,
+                height: SHADOW_SIZE,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -415,15 +446,28 @@ impl<'window> Renderer<'window> {
             label: Some("spark.shadow_bind"),
             layout: &shadow_bgl,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: globals_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&shadow_view) },
-                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&shadow_sampler) },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: globals_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&shadow_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&shadow_sampler),
+                },
             ],
         });
 
         let white = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("spark.white"),
-            size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -444,8 +488,11 @@ impl<'window> Renderer<'window> {
 
         let sprite_pass = SpritePass::new(&device, config.format, &globals_bgl);
         let mesh_pass = MeshPass::new(&device, config.format, &shadow_bgl);
-        let egui_renderer =
-            egui_wgpu::Renderer::new(&device, config.format, egui_wgpu::RendererOptions::default());
+        let egui_renderer = egui_wgpu::Renderer::new(
+            &device,
+            config.format,
+            egui_wgpu::RendererOptions::default(),
+        );
 
         Ok(Self {
             device,
@@ -471,7 +518,11 @@ impl<'window> Renderer<'window> {
     fn upload_white(&mut self) {
         let white = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("spark.white"),
-            size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -487,8 +538,16 @@ impl<'window> Renderer<'window> {
                 aspect: wgpu::TextureAspect::All,
             },
             &[255, 255, 255, 255],
-            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4), rows_per_image: Some(1) },
-            wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4),
+                rows_per_image: Some(1),
+            },
+            wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
         );
         self.white_view = white.create_view(&Default::default());
     }
@@ -518,10 +577,10 @@ impl<'window> Renderer<'window> {
             return self.white_view.clone();
         }
         let entry_version = assets.meta(path).map(|m| m.version).unwrap_or(0);
-        if let Some((v, view)) = self.tex_cache.get(path) {
-            if *v == entry_version {
-                return view.clone();
-            }
+        if let Some((v, view)) = self.tex_cache.get(path)
+            && *v == entry_version
+        {
+            return view.clone();
         }
         let data = if assets.meta(path).map(|m| m.kind) == Some(AssetKind::Texture) {
             assets.texture(path).cloned()
@@ -535,14 +594,23 @@ impl<'window> Renderer<'window> {
                 self.white_view.clone()
             }
         };
-        self.tex_cache.insert(path.to_string(), (entry_version, view.clone()));
+        self.tex_cache
+            .insert(path.to_string(), (entry_version, view.clone()));
         view
     }
 
-    fn upload_texture(&mut self, label: &str, tex: &crate::assets::TextureData) -> wgpu::TextureView {
+    fn upload_texture(
+        &mut self,
+        label: &str,
+        tex: &crate::assets::TextureData,
+    ) -> wgpu::TextureView {
         let t = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some(label),
-            size: wgpu::Extent3d { width: tex.width, height: tex.height, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: tex.width,
+                height: tex.height,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -551,10 +619,23 @@ impl<'window> Renderer<'window> {
             view_formats: &[],
         });
         self.queue.write_texture(
-            wgpu::TexelCopyTextureInfo { texture: &t, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            wgpu::TexelCopyTextureInfo {
+                texture: &t,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
             &tex.rgba,
-            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(tex.width * 4), rows_per_image: Some(tex.height) },
-            wgpu::Extent3d { width: tex.width, height: tex.height, depth_or_array_layers: 1 },
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(tex.width * 4),
+                rows_per_image: Some(tex.height),
+            },
+            wgpu::Extent3d {
+                width: tex.width,
+                height: tex.height,
+                depth_or_array_layers: 1,
+            },
         );
         t.create_view(&Default::default())
     }
@@ -564,26 +645,45 @@ impl<'window> Renderer<'window> {
             .meta(path.split('#').next().unwrap_or(path))
             .map(|m| m.version)
             .unwrap_or(0);
-        if let Some((v, m)) = self.mesh_cache.get(path) {
-            if *v == entry_version {
-                return Some(GpuMesh { verts: m.verts.clone(), indices: m.indices.clone(), count: m.count });
-            }
+        if let Some((v, m)) = self.mesh_cache.get(path)
+            && *v == entry_version
+        {
+            return Some(GpuMesh {
+                verts: m.verts.clone(),
+                indices: m.indices.clone(),
+                count: m.count,
+            });
         }
         let mesh = assets.mesh(path)?.clone();
-        let verts = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some(path),
-            contents: bytemuck::cast_slice(&mesh.vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-        let indices = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some(path),
-            contents: bytemuck::cast_slice(&mesh.indices),
-            usage: wgpu::BufferUsages::INDEX,
-        });
-        let gpu = GpuMesh { verts, indices, count: mesh.indices.len() as u32 };
+        let verts = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(path),
+                contents: bytemuck::cast_slice(&mesh.vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+        let indices = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(path),
+                contents: bytemuck::cast_slice(&mesh.indices),
+                usage: wgpu::BufferUsages::INDEX,
+            });
+        let gpu = GpuMesh {
+            verts,
+            indices,
+            count: mesh.indices.len() as u32,
+        };
         self.mesh_cache.insert(
             path.to_string(),
-            (entry_version, GpuMesh { verts: gpu.verts.clone(), indices: gpu.indices.clone(), count: gpu.count }),
+            (
+                entry_version,
+                GpuMesh {
+                    verts: gpu.verts.clone(),
+                    indices: gpu.indices.clone(),
+                    count: gpu.count,
+                },
+            ),
         );
         Some(gpu)
     }
@@ -608,7 +708,8 @@ impl<'window> Renderer<'window> {
         let view = surface_tex.texture.create_view(&Default::default());
         let mut encoder = self.device.create_command_encoder(&Default::default());
 
-        self.queue.write_buffer(&self.globals_buf, 0, bytemuck::bytes_of(&frame.globals));
+        self.queue
+            .write_buffer(&self.globals_buf, 0, bytemuck::bytes_of(&frame.globals));
 
         let (sx, sy, sw, sh) = viewport_px
             .map(|(x, y, w, h)| (x, y, w.max(1), h.max(1)))
@@ -621,14 +722,19 @@ impl<'window> Renderer<'window> {
                 color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.shadow_view,
-                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }),
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
                     stencil_ops: None,
                 }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
             for (mesh_path, _tex, instances) in &frame.meshes {
-                let Some(gpu) = self.ensure_mesh(assets, mesh_path) else { continue };
+                let Some(gpu) = self.ensure_mesh(assets, mesh_path) else {
+                    continue;
+                };
                 self.mesh_pass.draw_shadow(
                     &self.device,
                     &self.queue,
@@ -662,7 +768,10 @@ impl<'window> Renderer<'window> {
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth,
-                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }),
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
                     stencil_ops: None,
                 }),
                 timestamp_writes: None,
@@ -678,7 +787,9 @@ impl<'window> Renderer<'window> {
 
             // Meshes first (depth-tested, shadowed, lit).
             for (mesh_path, tex_path, instances) in &frame.meshes {
-                let Some(gpu) = self.ensure_mesh(assets, mesh_path) else { continue };
+                let Some(gpu) = self.ensure_mesh(assets, mesh_path) else {
+                    continue;
+                };
                 let tex_view = if tex_path.is_empty() {
                     self.white_view.clone()
                 } else {
@@ -714,13 +825,16 @@ impl<'window> Renderer<'window> {
 
         // ---- egui pass ---------------------------------------------------------
         if let Some((jobs, screen)) = egui {
-            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("spark.egui"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
                     depth_slice: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
                 })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
@@ -742,7 +856,11 @@ fn create_depth(device: &wgpu::Device, w: u32, h: u32) -> wgpu::TextureView {
     device
         .create_texture(&wgpu::TextureDescriptor {
             label: Some("spark.depth"),
-            size: wgpu::Extent3d { width: w.max(1), height: h.max(1), depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: w.max(1),
+                height: h.max(1),
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,

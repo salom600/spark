@@ -91,7 +91,9 @@ impl EditorCamera {
         let kind = match dimension {
             Dimension::D2 => {
                 // Look straight down -Z for 2D.
-                CameraKind::Ortho2D { height: self.ortho_height }
+                CameraKind::Ortho2D {
+                    height: self.ortho_height,
+                }
             }
             Dimension::D3 => CameraKind::Perspective { fov_deg: self.fov },
         };
@@ -100,7 +102,16 @@ impl EditorCamera {
             Dimension::D2 => Vec3::ZERO,
             Dimension::D3 => Vec3::new(self.pitch, self.yaw, 0.0),
         };
-        (Transform { rotation: rot, ..tr }, Camera { kind, ..Default::default() })
+        (
+            Transform {
+                rotation: rot,
+                ..tr
+            },
+            Camera {
+                kind,
+                ..Default::default()
+            },
+        )
     }
 }
 
@@ -118,8 +129,6 @@ pub struct EditorState {
     pub new_project_name: String,
     pub new_project_dim: Dimension,
     pub open_path: String,
-    pub renaming: Option<(hecs::Entity, String)>,
-    pub rules_edit: Option<(hecs::Entity, usize)>,
 }
 
 impl Default for EditorState {
@@ -132,8 +141,6 @@ impl Default for EditorState {
             new_project_name: "MyGame".into(),
             new_project_dim: Dimension::D2,
             open_path: ".".into(),
-            renaming: None,
-            rules_edit: None,
         }
     }
 }

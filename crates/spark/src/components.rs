@@ -36,7 +36,11 @@ fn default_scale() -> Vec3 {
 
 impl Default for Transform {
     fn default() -> Self {
-        Self { position: Vec3::ZERO, rotation: Vec3::ZERO, scale: Vec3::ONE }
+        Self {
+            position: Vec3::ZERO,
+            rotation: Vec3::ZERO,
+            scale: Vec3::ONE,
+        }
     }
 }
 
@@ -93,7 +97,11 @@ fn default_sprite_size() -> Vec2 {
 
 impl Default for Sprite {
     fn default() -> Self {
-        Self { image: String::new(), color: Color::WHITE, size: Vec2::ONE }
+        Self {
+            image: String::new(),
+            color: Color::WHITE,
+            size: Vec2::ONE,
+        }
     }
 }
 
@@ -153,8 +161,14 @@ pub struct MeshRenderer {
 #[derive(ComponentDef, Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum CameraKind {
     /// Orthographic camera sized by world `height` (width follows aspect).
-    Ortho2D { #[serde(default = "default_cam_height")] height: f32 },
-    Perspective { #[serde(default = "default_fov")] fov_deg: f32 },
+    Ortho2D {
+        #[serde(default = "default_cam_height")]
+        height: f32,
+    },
+    Perspective {
+        #[serde(default = "default_fov")]
+        fov_deg: f32,
+    },
 }
 
 fn default_cam_height() -> f32 {
@@ -166,7 +180,9 @@ fn default_fov() -> f32 {
 
 impl Default for CameraKind {
     fn default() -> Self {
-        Self::Ortho2D { height: default_cam_height() }
+        Self::Ortho2D {
+            height: default_cam_height(),
+        }
     }
 }
 
@@ -204,8 +220,14 @@ impl Default for Camera {
 #[derive(ComponentDef, Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum LightKind {
     /// Sun-like directional light; `direction` points *from* light to scene.
-    Directional { #[serde(default = "default_light_dir")] direction: Vec3 },
-    Point { #[serde(default = "default_point_range")] range: f32 },
+    Directional {
+        #[serde(default = "default_light_dir")]
+        direction: Vec3,
+    },
+    Point {
+        #[serde(default = "default_point_range")]
+        range: f32,
+    },
 }
 
 fn default_light_dir() -> Vec3 {
@@ -217,7 +239,9 @@ fn default_point_range() -> f32 {
 
 impl Default for LightKind {
     fn default() -> Self {
-        Self::Directional { direction: default_light_dir() }
+        Self::Directional {
+            direction: default_light_dir(),
+        }
     }
 }
 
@@ -306,10 +330,21 @@ impl Default for RigidBody {
 #[derive(ComponentDef, Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum ColliderShape {
     /// Half-extents (3D) or half-width/half-height (2D, z ignored).
-    Box { #[serde(default = "default_box_half")] half: Vec3 },
-    Ball { #[serde(default = "default_ball_r")] r: f32 },
+    Box {
+        #[serde(default = "default_box_half")]
+        half: Vec3,
+    },
+    Ball {
+        #[serde(default = "default_ball_r")]
+        r: f32,
+    },
     /// Vertical capsule (2D) / Y capsule (3D).
-    Capsule { #[serde(default = "default_capsule_h")] half_height: f32, #[serde(default = "default_ball_r")] r: f32 },
+    Capsule {
+        #[serde(default = "default_capsule_h")]
+        half_height: f32,
+        #[serde(default = "default_ball_r")]
+        r: f32,
+    },
 }
 
 fn default_box_half() -> Vec3 {
@@ -324,7 +359,9 @@ fn default_capsule_h() -> f32 {
 
 impl Default for ColliderShape {
     fn default() -> Self {
-        Self::Box { half: default_box_half() }
+        Self::Box {
+            half: default_box_half(),
+        }
     }
 }
 
@@ -356,7 +393,10 @@ fn default_music_vol() -> f32 {
 
 impl Default for Music {
     fn default() -> Self {
-        Self { track: String::new(), volume: default_music_vol() }
+        Self {
+            track: String::new(),
+            volume: default_music_vol(),
+        }
     }
 }
 
@@ -375,7 +415,7 @@ pub struct RulesComp {
 impl ComponentDef for RulesComp {
     const NAME: &'static str = "Rules";
     fn inspect(&mut self, ui: &mut egui::Ui) -> bool {
-        let mut changed = false;
+        let changed = false;
         ui.weak(format!("{} rule(s)", self.rules.len()));
         for (i, r) in self.rules.iter().enumerate() {
             ui.push_id(i, |ui| {
@@ -407,8 +447,6 @@ impl ComponentDef for Vars {
         changed
     }
 }
-
-
 
 /// Register every built-in component. Games call this first, then register
 /// their own types before loading scenes.

@@ -61,12 +61,12 @@ impl Editor {
     fn entity_context_menu(&mut self, ui: &mut egui::Ui, e: hecs::Entity) {
         if ui.button("Duplicate").clicked() {
             self.duplicate_entity(e);
-            ui.close_menu();
+            ui.close();
         }
         if ui.button("Delete").clicked() {
             self.state.selected = Some(e);
             self.despawn_selected();
-            ui.close_menu();
+            ui.close();
         }
     }
 
@@ -105,7 +105,11 @@ impl Editor {
         egui::Grid::new("meta").num_columns(2).show(ui, |ui| {
             ui.strong("Name");
             if ui.text_edit_singleline(&mut name).changed() {
-                let _ = self.engine.scene.world.insert_one(e, ecs::Name(name.clone()));
+                let _ = self
+                    .engine
+                    .scene
+                    .world
+                    .insert_one(e, ecs::Name(name.clone()));
             }
             ui.end_row();
             ui.strong("Tag");
@@ -150,7 +154,9 @@ impl Editor {
 
     /// One component: collapsing header + generated inspector + undo capture.
     fn inspect_component(&mut self, ui: &mut egui::Ui, e: hecs::Entity, name: &str) {
-        let Some(entry) = self.engine.registry.get(name) else { return };
+        let Some(entry) = self.engine.registry.get(name) else {
+            return;
+        };
         let static_name = entry.name;
         let before = self.snapshot_component(e, name);
 
@@ -170,12 +176,12 @@ impl Editor {
                     self.push_component_cmd(e, static_name, before2, None, "Remove");
                     let entry = self.engine.registry.get(name).unwrap();
                     (entry.remove)(&mut self.engine.scene.world, e);
-                    ui.close_menu();
+                    ui.close();
                 }
                 if ui.button("Reset to default").clicked() {
                     let entry = self.engine.registry.get(name).unwrap();
                     (entry.add_default)(&mut self.engine.scene.world, e);
-                    ui.close_menu();
+                    ui.close();
                 }
             });
 
@@ -218,7 +224,9 @@ impl Editor {
             .id_salt(("comp", e.to_bits(), "Rules"))
             .show(ui, |ui| {
                 let Editor { engine, .. } = self;
-                let Ok(mut rc) = engine.scene.world.get::<&mut RulesComp>(e) else { return };
+                let Ok(mut rc) = engine.scene.world.get::<&mut RulesComp>(e) else {
+                    return;
+                };
                 if ui.button("+ Add Rule").clicked() {
                     rc.rules.push(Rule {
                         on: RuleEvent::Update,
@@ -267,12 +275,17 @@ impl Editor {
             return;
         }
         let (down, delta, secondary) = ui.ctx().input(|i| {
-            (i.pointer.primary_down(), i.pointer.delta(), i.pointer.secondary_down())
+            (
+                i.pointer.primary_down(),
+                i.pointer.delta(),
+                i.pointer.secondary_down(),
+            )
         });
         if secondary {
             self.editor_cam.look(Vec2::new(delta.x, delta.y));
         } else if down {
-            self.editor_cam.pan(Vec2::new(delta.x, delta.y), self.engine.scene.dimension);
+            self.editor_cam
+                .pan(Vec2::new(delta.x, delta.y), self.engine.scene.dimension);
         }
     }
 
@@ -334,19 +347,19 @@ impl Editor {
                                 ui.menu_button("→ assign", |ui| {
                                     if ui.button("as Sprite image").clicked() {
                                         self.assign_asset(&p, "Sprite");
-                                        ui.close_menu();
+                                        ui.close();
                                     }
                                     if ui.button("as Mesh").clicked() {
                                         self.assign_asset(&p, "MeshRenderer");
-                                        ui.close_menu();
+                                        ui.close();
                                     }
                                     if ui.button("as Albedo texture").clicked() {
                                         self.assign_asset(&p, "Material");
-                                        ui.close_menu();
+                                        ui.close();
                                     }
                                     if ui.button("as Music").clicked() {
                                         self.assign_asset(&p, "Music");
-                                        ui.close_menu();
+                                        ui.close();
                                     }
                                 });
                             }
@@ -367,11 +380,23 @@ impl Editor {
         match target {
             "Sprite" => {
                 let _ = world.insert_one(e, Transform::default());
-                let _ = world.insert_one(e, Sprite { image: path.to_string(), ..Default::default() });
+                let _ = world.insert_one(
+                    e,
+                    Sprite {
+                        image: path.to_string(),
+                        ..Default::default()
+                    },
+                );
             }
             "MeshRenderer" => {
                 let _ = world.insert_one(e, Transform::default());
-                let _ = world.insert_one(e, MeshRenderer { mesh: path.to_string(), ..Default::default() });
+                let _ = world.insert_one(
+                    e,
+                    MeshRenderer {
+                        mesh: path.to_string(),
+                        ..Default::default()
+                    },
+                );
             }
             "Material" => {
                 if let Ok(mut mr) = world.get::<&mut MeshRenderer>(e) {
@@ -382,13 +407,22 @@ impl Editor {
                         e,
                         MeshRenderer {
                             mesh: "cube".into(),
-                            material: Material { texture: Some(path.to_string()), ..Default::default() },
+                            material: Material {
+                                texture: Some(path.to_string()),
+                                ..Default::default()
+                            },
                         },
                     );
                 }
             }
             "Music" => {
-                let _ = world.insert_one(e, Music { track: path.to_string(), ..Default::default() });
+                let _ = world.insert_one(
+                    e,
+                    Music {
+                        track: path.to_string(),
+                        ..Default::default()
+                    },
+                );
             }
             _ => {}
         }
@@ -398,16 +432,18 @@ impl Editor {
     fn console_panel(&mut self, ui: &mut egui::Ui) {
         ui.heading("Console");
         ui.separator();
-        egui::ScrollArea::vertical().stick_to_bottom(true).show(ui, |ui| {
-            for (level, msg) in &self.console {
-                let color = match level.as_str() {
-                    "error" => egui::Color32::RED,
-                    "warn" => egui::Color32::YELLOW,
-                    _ => egui::Color32::GRAY,
-                };
-                ui.colored_label(color, format!("[{level}] {msg}"));
-            }
-        });
+        egui::ScrollArea::vertical()
+            .stick_to_bottom(true)
+            .show(ui, |ui| {
+                for (level, msg) in &self.console {
+                    let color = match level.as_str() {
+                        "error" => egui::Color32::RED,
+                        "warn" => egui::Color32::YELLOW,
+                        _ => egui::Color32::GRAY,
+                    };
+                    ui.colored_label(color, format!("[{level}] {msg}"));
+                }
+            });
     }
 
     // -----------------------------------------------------------------------
@@ -430,7 +466,10 @@ impl Editor {
                     ui.separator();
                     ui.horizontal(|ui| {
                         if ui.button("Create").clicked() {
-                            let (n, d) = (self.state.new_project_name.clone(), self.state.new_project_dim);
+                            let (n, d) = (
+                                self.state.new_project_name.clone(),
+                                self.state.new_project_dim,
+                            );
                             self.new_project(&n, d);
                             self.state.show_new_project = false;
                         }
@@ -476,14 +515,25 @@ fn rule_event_ui(ui: &mut egui::Ui, ev: &mut RuleEvent) {
             .selected_text(ev.describe())
             .show_ui(ui, |ui| {
                 for label in [
-                    "Start", "Update", "Timer", "Key pressed", "Key held", "Action",
-                    "Collision enter", "Collision exit", "Message", "Clicked",
+                    "Start",
+                    "Update",
+                    "Timer",
+                    "Key pressed",
+                    "Key held",
+                    "Action",
+                    "Collision enter",
+                    "Collision exit",
+                    "Message",
+                    "Clicked",
                 ] {
                     if ui.selectable_label(false, label).clicked() {
                         *ev = match label {
                             "Start" => RuleEvent::Start,
                             "Update" => RuleEvent::Update,
-                            "Timer" => RuleEvent::Timer { secs: 1.0, repeat: true },
+                            "Timer" => RuleEvent::Timer {
+                                secs: 1.0,
+                                repeat: true,
+                            },
                             "Key pressed" => RuleEvent::KeyPressed("Space".into()),
                             "Key held" => RuleEvent::KeyHeld("KeyA".into()),
                             "Action" => RuleEvent::ActionPressed("jump".into()),
@@ -542,37 +592,70 @@ fn rule_conditions_ui(ui: &mut egui::Ui, conds: &mut Vec<Cond>) {
                     Cond::Once => {
                         ui.label("once");
                     }
+                    Cond::KeyHeld(k) => {
+                        ui.label("key held");
+                        ui.text_edit_singleline(k);
+                    }
+                    Cond::KeyNotHeld(k) => {
+                        ui.label("key not held");
+                        ui.text_edit_singleline(k);
+                    }
                     Cond::Cooldown(t) => {
                         ui.label("cooldown");
                         ui.add(egui::DragValue::new(t).range(0.01..=60.0).speed(0.1));
                         ui.label("s");
                     }
-                    Cond::Var { scope, name, op, value } => {
+                    Cond::Var {
+                        scope,
+                        name,
+                        op,
+                        value,
+                    } => {
                         egui::ComboBox::from_id_salt("scope")
-                            .selected_text(if *scope == VarScope::Entity { "entity" } else { "global" })
+                            .selected_text(if *scope == VarScope::Entity {
+                                "entity"
+                            } else {
+                                "global"
+                            })
                             .show_ui(ui, |ui| {
-                                if ui.selectable_label(*scope == VarScope::Entity, "entity").clicked() {
+                                if ui
+                                    .selectable_label(*scope == VarScope::Entity, "entity")
+                                    .clicked()
+                                {
                                     *scope = VarScope::Entity;
                                 }
-                                if ui.selectable_label(*scope == VarScope::Global, "global").clicked() {
+                                if ui
+                                    .selectable_label(*scope == VarScope::Global, "global")
+                                    .clicked()
+                                {
                                     *scope = VarScope::Global;
                                 }
                             });
                         ui.text_edit_singleline(name).on_hover_text("variable");
                         let op_txt = match op {
-                            CmpOp::Lt => "<", CmpOp::Gt => ">", CmpOp::Le => "<=",
-                            CmpOp::Ge => ">=", CmpOp::Eq => "==", CmpOp::Ne => "!=",
+                            CmpOp::Lt => "<",
+                            CmpOp::Gt => ">",
+                            CmpOp::Le => "<=",
+                            CmpOp::Ge => ">=",
+                            CmpOp::Eq => "==",
+                            CmpOp::Ne => "!=",
                         };
-                        egui::ComboBox::from_id_salt("op").selected_text(op_txt).show_ui(ui, |ui| {
-                            for (txt, val) in [
-                                ("<", CmpOp::Lt), (">", CmpOp::Gt), ("<=", CmpOp::Le),
-                                (">=", CmpOp::Ge), ("==", CmpOp::Eq), ("!=", CmpOp::Ne),
-                            ] {
-                                if ui.selectable_label(*op == val, txt).clicked() {
-                                    *op = val;
+                        egui::ComboBox::from_id_salt("op")
+                            .selected_text(op_txt)
+                            .show_ui(ui, |ui| {
+                                for (txt, val) in [
+                                    ("<", CmpOp::Lt),
+                                    (">", CmpOp::Gt),
+                                    ("<=", CmpOp::Le),
+                                    (">=", CmpOp::Ge),
+                                    ("==", CmpOp::Eq),
+                                    ("!=", CmpOp::Ne),
+                                ] {
+                                    if ui.selectable_label(*op == val, txt).clicked() {
+                                        *op = val;
+                                    }
                                 }
-                            }
-                        });
+                            });
                         ui.add(egui::DragValue::new(value).speed(0.1));
                     }
                     Cond::Chance(p) => {
@@ -590,7 +673,12 @@ fn rule_conditions_ui(ui: &mut egui::Ui, conds: &mut Vec<Cond>) {
         conds.remove(i);
     }
     if ui.small_button("+ condition").clicked() {
-        conds.push(Cond::Var { scope: VarScope::Entity, name: "var".into(), op: CmpOp::Eq, value: 1.0 });
+        conds.push(Cond::Var {
+            scope: VarScope::Entity,
+            name: "var".into(),
+            op: CmpOp::Eq,
+            value: 1.0,
+        });
     }
 }
 
@@ -604,14 +692,29 @@ fn rule_actions_ui(ui: &mut egui::Ui, actions: &mut Vec<Action>) {
                         ui.strong("log");
                         ui.text_edit_singleline(msg);
                     }
-                    Action::SetVar { scope, name, value } | Action::AddVar { scope, name, delta: value } => {
+                    Action::SetVar { scope, name, value }
+                    | Action::AddVar {
+                        scope,
+                        name,
+                        delta: value,
+                    } => {
                         egui::ComboBox::from_id_salt("scope")
-                            .selected_text(if *scope == VarScope::Entity { "entity" } else { "global" })
+                            .selected_text(if *scope == VarScope::Entity {
+                                "entity"
+                            } else {
+                                "global"
+                            })
                             .show_ui(ui, |ui| {
-                                if ui.selectable_label(*scope == VarScope::Entity, "entity").clicked() {
+                                if ui
+                                    .selectable_label(*scope == VarScope::Entity, "entity")
+                                    .clicked()
+                                {
                                     *scope = VarScope::Entity;
                                 }
-                                if ui.selectable_label(*scope == VarScope::Global, "global").clicked() {
+                                if ui
+                                    .selectable_label(*scope == VarScope::Global, "global")
+                                    .clicked()
+                                {
                                     *scope = VarScope::Global;
                                 }
                             });
@@ -680,15 +783,57 @@ fn add_action_button(ui: &mut egui::Ui, actions: &mut Vec<Action>) {
                 ("Log", Action::Log("hello".into())),
                 ("DestroySelf", Action::DestroySelf),
                 ("DestroyOther", Action::DestroyOther),
-                ("SetVelocity", Action::SetVelocity { v: Vec3::ZERO, relative: false }),
-                ("ApplyImpulse", Action::ApplyImpulse { v: Vec3::new(0.0, 5.0, 0.0) }),
+                (
+                    "SetVelocity",
+                    Action::SetVelocity {
+                        v: Vec3::ZERO,
+                        relative: false,
+                    },
+                ),
+                (
+                    "ApplyImpulse",
+                    Action::ApplyImpulse {
+                        v: Vec3::new(0.0, 5.0, 0.0),
+                    },
+                ),
                 ("Translate", Action::Translate { by: Vec3::ZERO }),
-                ("SetVar", Action::SetVar { scope: VarScope::Entity, name: "var".into(), value: 0.0 }),
-                ("AddVar", Action::AddVar { scope: VarScope::Entity, name: "var".into(), delta: 1.0 }),
-                ("PlaySound", Action::PlaySound { sound: "assets/sfx.wav".into(), volume: 0.8 }),
-                ("PlayMusic", Action::PlayMusic { track: "assets/music.ogg".into(), volume: 0.6 }),
+                (
+                    "SetVar",
+                    Action::SetVar {
+                        scope: VarScope::Entity,
+                        name: "var".into(),
+                        value: 0.0,
+                    },
+                ),
+                (
+                    "AddVar",
+                    Action::AddVar {
+                        scope: VarScope::Entity,
+                        name: "var".into(),
+                        delta: 1.0,
+                    },
+                ),
+                (
+                    "PlaySound",
+                    Action::PlaySound {
+                        sound: "assets/sfx.wav".into(),
+                        volume: 0.8,
+                    },
+                ),
+                (
+                    "PlayMusic",
+                    Action::PlayMusic {
+                        track: "assets/music.ogg".into(),
+                        volume: 0.6,
+                    },
+                ),
                 ("StopMusic", Action::StopMusic),
-                ("SetGravity", Action::SetGravity { g: Vec3::new(0.0, -9.81, 0.0) }),
+                (
+                    "SetGravity",
+                    Action::SetGravity {
+                        g: Vec3::new(0.0, -9.81, 0.0),
+                    },
+                ),
                 ("CameraFollowMe", Action::CameraFollowMe { lerp: 0.1 }),
                 ("LoadScene", Action::LoadScene("scenes/main.scene".into())),
                 ("SendMessage", Action::SendMessage("msg".into())),

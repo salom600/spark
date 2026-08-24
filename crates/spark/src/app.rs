@@ -21,12 +21,12 @@ use crate::input::Input;
 use crate::math::{Vec2, Vec3};
 use crate::physics::Physics;
 use crate::project::Project;
-use crate::render::{build_frame_draw, FrameDraw, Renderer};
-use crate::rules::{run_rules, set_partner, ActionCtx, RuleRuntime};
-use crate::scene::{default_registry, load_scene_file, Scene};
+use crate::render::{FrameDraw, Renderer, build_frame_draw};
+use crate::rules::{ActionCtx, RuleRuntime, run_rules, set_partner};
+use crate::scene::{Scene, default_registry, load_scene_file};
 
-/// Game HUD hook: receives the egui context each frame during play.
-pub type HudFn = Box<dyn FnMut(&egui::Context, &Scene) + Send>;
+/// Game HUD hook: receives the egui context and engine each frame.
+pub type HudFn = Box<dyn FnMut(&egui::Context, &Engine) + Send>;
 
 pub struct Engine<'window> {
     pub scene: Scene,
@@ -72,7 +72,9 @@ impl<'window> Engine<'window> {
         project_dir: Option<&Path>,
         renderer: Option<Renderer<'window>>,
     ) -> anyhow::Result<Self> {
-        let root = project_dir.map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
+        let root = project_dir
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."));
         let project = match project_dir {
             Some(_) => Some(Project::load_dir(&root)?),
             None => None,
@@ -107,7 +109,10 @@ impl<'window> Engine<'window> {
     }
 
     /// Windowed engine bound to a window surface, with a loaded project.
-    pub fn windowed(project_dir: &Path, window: &'window winit::window::Window) -> anyhow::Result<Self> {
+    pub fn windowed(
+        project_dir: &Path,
+        window: &'window winit::window::Window,
+    ) -> anyhow::Result<Self> {
         let renderer = Renderer::new(window)?;
         let mut engine = Self::core(Some(project_dir), Some(renderer))?;
         let (w, h) = engine.renderer.as_ref().unwrap().size();
@@ -161,7 +166,9 @@ impl<'window> Engine<'window> {
     /// One full simulation tick (order documented at module top).
     pub fn tick(&mut self, dt: f32) {
         self.frame += 1;
-        self.scene.globals.insert("_frame".into(), self.frame as f64);
+        self.scene
+            .globals
+            .insert("_frame".into(), self.frame as f64);
         self.stats.dt = dt;
         if dt > 0.0 {
             self.stats.fps = self.stats.fps * 0.9 + (1.0 / dt) * 0.1;
@@ -209,7 +216,14 @@ impl<'window> Engine<'window> {
                 mouse_world,
             };
             set_partner(&mut ctx, &collisions);
-            run_rules(&mut self.rules, &mut ctx, &rules, &collisions, &self.input, dt);
+            run_rules(
+                &mut self.rules,
+                &mut ctx,
+                &rules,
+                &collisions,
+                &self.input,
+                dt,
+            );
         }
 
         self.rules.camera_follow = camera_follow;
@@ -239,6 +253,9 @@ impl<'window> Engine<'window> {
 
         self.camera_follow(dt);
         self.music_autoplay();
+
+        // Input edges (pressed/released) are consumed by this tick.
+        self.input.end_frame();
     }
 
     /// Mouse position mapped to world space (orthographic cameras only).
@@ -268,27 +285,41 @@ impl<'window> Engine<'window> {
             .query::<(&Camera, &Transform)>()
             .iter()
             .next()
-            .map(|(_, (c, t))| (c.clone(), *t))
+            .map(|(_, (c, t))| (*c, *t))
     }
 
     fn camera_follow(&mut self, dt: f32) {
-        let Some((target, lerp)) = self.rules.camera_follow else { return };
-        let cam_e = self.scene.world.query::<&Camera>().iter().next().map(|(e, _)| e);
+        let Some((target, lerp)) = self.rules.camera_follow else {
+            return;
+        };
+        let cam_e = self
+            .scene
+            .world
+            .query::<&Camera>()
+            .iter()
+            .next()
+            .map(|(e, _)| e);
         let Some(cam_e) = cam_e else { return };
-        let Ok(t_tr) = self.scene.world.get::<&Transform>(target) else { return };
+        let Ok(t_tr) = self.scene.world.get::<&Transform>(target) else {
+            return;
+        };
         let t_pos = t_tr.position;
         let k = 1.0 - (1.0 - lerp.clamp(0.0, 1.0)).powf((dt * 60.0).max(0.0));
         if let Ok(mut t) = self.scene.world.get::<&mut Transform>(cam_e) {
-            t.position = t.position.lerp(Vec3::new(t_pos.x, t_pos.y, t.position.z), k);
+            t.position = t
+                .position
+                .lerp(Vec3::new(t_pos.x, t_pos.y, t.position.z), k);
         }
     }
 
     fn music_autoplay(&mut self) {
-        let mut wanted: Option<Music> = None;
-        for (_, m) in self.scene.world.query::<&Music>().iter() {
-            wanted = Some((*m).clone());
-            break;
-        }
+        let wanted: Option<Music> = self
+            .scene
+            .world
+            .query::<&Music>()
+            .iter()
+            .next()
+            .map(|(_, m)| m.clone());
         match wanted {
             Some(m) if self.playing_track.as_deref() != Some(m.track.as_str()) => {
                 if let Some(bytes) = self.assets.sound(&m.track) {
@@ -296,11 +327,9 @@ impl<'window> Engine<'window> {
                     self.playing_track = Some(m.track);
                 }
             }
-            None => {
-                if self.playing_track.is_some() {
-                    self.audio.stop_music();
-                    self.playing_track = None;
-                }
+            None if self.playing_track.is_some() => {
+                self.audio.stop_music();
+                self.playing_track = None;
             }
             _ => {}
         }
@@ -317,9 +346,42 @@ impl<'window> Engine<'window> {
 // Windowed game runner
 // ---------------------------------------------------------------------------
 
-/// Run a project as a standalone game (window + loop + optional HUD).
+/// Run a project as a standalone game (window + loop + built-in HUD).
 pub fn run_game(project_dir: &Path) -> anyhow::Result<()> {
-    run_game_with(project_dir, None)
+    run_game_with(project_dir, Some(Box::new(builtin_hud)))
+}
+
+/// Minimal built-in HUD: project name and scene globals (score counters etc.)
+/// drawn top-left — gives every data-driven game a scoreboard for free.
+pub fn builtin_hud(ctx: &egui::Context, engine: &Engine) {
+    egui::Area::new(egui::Id::new("spark.hud"))
+        .anchor(egui::Align2::LEFT_TOP, egui::vec2(12.0, 8.0))
+        .show(ctx, |ui| {
+            let title = engine
+                .project
+                .as_ref()
+                .map(|p| p.name.clone())
+                .unwrap_or_else(|| "spark".into());
+            ui.heading(title);
+            if !engine.scene.globals.is_empty() {
+                let mut vars: Vec<(&String, &f64)> = engine.scene.globals.iter().collect();
+                vars.sort_by(|a, b| a.0.cmp(b.0));
+                ui.monospace(
+                    vars.iter()
+                        .map(|(k, v)| format!("{k}: {}", format_f64(**v)))
+                        .collect::<Vec<_>>()
+                        .join("   "),
+                );
+            }
+        });
+}
+
+fn format_f64(v: f64) -> String {
+    if v.fract() == 0.0 {
+        format!("{}", v as i64)
+    } else {
+        format!("{v:.2}")
+    }
 }
 
 pub fn run_game_with(project_dir: &Path, hud: Option<HudFn>) -> anyhow::Result<()> {
@@ -332,7 +394,8 @@ pub fn run_game_with(project_dir: &Path, hud: Option<HudFn>) -> anyhow::Result<(
     // which gives the wgpu surface a 'static borrow (winit 0.30 has no
     // Arc<Window>, see DECISIONS.md §6).
     #[allow(deprecated)] // EventLoop::create_window; the run_app port is roadmap
-    let window: &'static winit::window::Window = Box::leak(Box::new(event_loop.create_window(attrs)?));
+    let window: &'static winit::window::Window =
+        Box::leak(Box::new(event_loop.create_window(attrs)?));
 
     let mut engine = Engine::windowed(project_dir, window)?;
     engine.hud = hud;
@@ -353,7 +416,7 @@ pub fn run_game_with(project_dir: &Path, hud: Option<HudFn>) -> anyhow::Result<(
         use winit::event::{Event, WindowEvent};
         match event {
             Event::WindowEvent { window_id, event } if window_id == window.id() => {
-                let egui_res = egui_state.on_window_event(&window, &event);
+                let egui_res = egui_state.on_window_event(window, &event);
                 if !egui_res.consumed {
                     forward_input(&mut engine, &event);
                 }
@@ -366,7 +429,7 @@ pub fn run_game_with(project_dir: &Path, hud: Option<HudFn>) -> anyhow::Result<(
                     }
                     WindowEvent::CloseRequested => elwt.exit(),
                     WindowEvent::RedrawRequested => {
-                        game_frame(&mut engine, &window, &ctx, &mut egui_state, pixels_per_point);
+                        game_frame(&mut engine, window, &ctx, &mut egui_state, pixels_per_point);
                         // End of frame: clear per-frame input edges.
                         engine.input.end_frame();
                     }
@@ -392,11 +455,13 @@ fn game_frame(
     engine.tick(dt);
 
     let raw = egui_state.take_egui_input(window);
+    let mut hud = engine.hud.take();
     let output = ctx.run(raw, |ctx| {
-        if let Some(hud) = engine.hud.as_mut() {
-            hud(ctx, &engine.scene);
+        if let Some(hud) = hud.as_mut() {
+            hud(ctx, engine);
         }
     });
+    engine.hud = hud;
     egui_state.handle_platform_output(window, output.platform_output);
 
     let size = window.inner_size();
@@ -407,7 +472,9 @@ fn game_frame(
     let jobs = ctx.tessellate(output.shapes, pixels_per_point);
 
     // Split borrows: renderer and assets are disjoint Engine fields.
-    let Engine { renderer, assets, .. } = engine;
+    let Engine {
+        renderer, assets, ..
+    } = engine;
     if let Some(r) = renderer.as_mut() {
         let dev = r.device.clone();
         let que = r.queue.clone();
@@ -415,11 +482,10 @@ fn game_frame(
         for (id, delta) in &output.textures_delta.set {
             r.egui_renderer.update_texture(&dev, &que, *id, delta);
         }
-        let pre = r.egui_renderer.update_buffers(&dev, &que, &mut enc, &jobs, &screen);
-        let pre = [enc.finish()]
-            .into_iter()
-            .chain(pre)
-            .collect::<Vec<_>>();
+        let pre = r
+            .egui_renderer
+            .update_buffers(&dev, &que, &mut enc, &jobs, &screen);
+        let pre = [enc.finish()].into_iter().chain(pre).collect::<Vec<_>>();
 
         // build_draw needs &mut Engine; use the borrowed pieces directly.
         let aspect = engine.viewport_px.x / engine.viewport_px.y.max(1.0);
@@ -439,7 +505,9 @@ fn forward_input(engine: &mut Engine, event: &winit::event::WindowEvent) {
             }
         }
         WindowEvent::CursorMoved { position, .. } => {
-            engine.input.on_mouse_move(Vec2::new(position.x as f32, position.y as f32));
+            engine
+                .input
+                .on_mouse_move(Vec2::new(position.x as f32, position.y as f32));
         }
         WindowEvent::MouseInput { state, button, .. } => {
             engine.input.on_mouse_button(*button, *state);

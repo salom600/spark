@@ -12,7 +12,7 @@
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Fields};
+use syn::{Data, DeriveInput, Fields, parse_macro_input};
 
 /// Humanize a field/variant ident for display: `base_color` -> `Base color`.
 fn humanize(ident: &proc_macro2::Ident) -> String {
@@ -35,7 +35,9 @@ fn humanize(ident: &proc_macro2::Ident) -> String {
 fn skipped(attrs: &[syn::Attribute]) -> bool {
     attrs.iter().any(|a| {
         a.path().is_ident("inspector")
-            && a.meta.require_list().is_ok_and(|l| l.tokens.to_string() == "skip")
+            && a.meta
+                .require_list()
+                .is_ok_and(|l| l.tokens.to_string() == "skip")
     })
 }
 
@@ -194,19 +196,15 @@ fn variant_bindings(variant: &syn::Variant) -> proc_macro2::TokenStream {
 /// Per-field edit rows for the active enum variant. Mutates the outer `changed`.
 fn variant_field_rows(variant: &syn::Variant, type_name: &str) -> proc_macro2::TokenStream {
     if let Fields::Named(f) = &variant.fields {
-        let rows = f
-            .named
-            .iter()
-            .filter(|fl| !skipped(&fl.attrs))
-            .map(|fl| {
-                let label = humanize(fl.ident.as_ref().unwrap());
-                let field = fl.ident.as_ref().unwrap();
-                quote! {
-                    ui.strong(#label);
-                    changed |= ::spark::ecs::Inspect::inspect(#field, ui);
-                    ui.end_row();
-                }
-            });
+        let rows = f.named.iter().filter(|fl| !skipped(&fl.attrs)).map(|fl| {
+            let label = humanize(fl.ident.as_ref().unwrap());
+            let field = fl.ident.as_ref().unwrap();
+            quote! {
+                ui.strong(#label);
+                changed |= ::spark::ecs::Inspect::inspect(#field, ui);
+                ui.end_row();
+            }
+        });
         quote! {
             ::spark::reexport::egui::Grid::new(concat!(#type_name, "::fields"))
                 .num_columns(2)

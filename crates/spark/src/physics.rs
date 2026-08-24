@@ -207,9 +207,23 @@ impl Physics {
         }
 
         let (existing, present): (Vec<Entity>, Vec<Entity>) = if self.dimension == Dimension::D2 {
-            (self.map2.keys().copied().collect(), desired.iter().copied().filter(|e| self.map2.contains_key(e)).collect())
+            (
+                self.map2.keys().copied().collect(),
+                desired
+                    .iter()
+                    .copied()
+                    .filter(|e| self.map2.contains_key(e))
+                    .collect(),
+            )
         } else {
-            (self.map3.keys().copied().collect(), desired.iter().copied().filter(|e| self.map3.contains_key(e)).collect())
+            (
+                self.map3.keys().copied().collect(),
+                desired
+                    .iter()
+                    .copied()
+                    .filter(|e| self.map3.contains_key(e))
+                    .collect(),
+            )
         };
         for e in existing {
             if !desired.contains(&e) {
@@ -226,22 +240,36 @@ impl Physics {
     fn remove_body(&mut self, e: Entity) {
         if self.dimension == Dimension::D2 {
             if let Some(bh) = self.map2.remove(&e) {
-                self.p2
-                    .bodies
-                    .remove(bh, &mut self.p2.islands, &mut self.p2.colliders, &mut self.p2.joints, &mut self.p2.mjoints, true);
+                self.p2.bodies.remove(
+                    bh,
+                    &mut self.p2.islands,
+                    &mut self.p2.colliders,
+                    &mut self.p2.joints,
+                    &mut self.p2.mjoints,
+                    true,
+                );
             }
             self.col2ent.retain(|_, ent| *ent != e);
         } else if let Some(bh) = self.map3.remove(&e) {
-            self.p3
-                .bodies
-                .remove(bh, &mut self.p3.islands, &mut self.p3.colliders, &mut self.p3.joints, &mut self.p3.mjoints, true);
+            self.p3.bodies.remove(
+                bh,
+                &mut self.p3.islands,
+                &mut self.p3.colliders,
+                &mut self.p3.joints,
+                &mut self.p3.mjoints,
+                true,
+            );
             self.col3ent.retain(|_, ent| *ent != e);
         }
     }
 
     fn create_body(&mut self, world: &mut World, e: Entity) {
         let transform = world.get::<&Transform>(e).map(|t| *t).unwrap_or_default();
-        let rb = world.get::<&RigidBody>(e).ok().map(|r| (*r).clone()).unwrap_or_default();
+        let rb = world
+            .get::<&RigidBody>(e)
+            .ok()
+            .map(|r| (*r).clone())
+            .unwrap_or_default();
         let Some(col) = world.get::<&Collider>(e).ok().map(|c| (*c).clone()) else {
             return;
         };
@@ -266,7 +294,10 @@ impl Physics {
                 b.wake_up(true);
             }
             for cb in collider_builders_2d(&col, rb.restitution, rb.friction) {
-                let h = self.p2.colliders.insert_with_parent(cb, body, &mut self.p2.bodies);
+                let h = self
+                    .p2
+                    .colliders
+                    .insert_with_parent(cb, body, &mut self.p2.bodies);
                 self.col2ent.insert(h, e);
             }
             self.map2.insert(e, body);
@@ -296,7 +327,10 @@ impl Physics {
                 b.wake_up(true);
             }
             for cb in collider_builders_3d(&col, rb.restitution, rb.friction) {
-                let h = self.p3.colliders.insert_with_parent(cb, body, &mut self.p3.bodies);
+                let h = self
+                    .p3
+                    .colliders
+                    .insert_with_parent(cb, body, &mut self.p3.bodies);
                 self.col3ent.insert(h, e);
             }
             self.map3.insert(e, body);
@@ -312,28 +346,44 @@ impl Physics {
         // Dynamic bodies are only repositioned via `teleport`.
         if self.dimension == Dimension::D2 {
             for (e, bh) in self.map2.clone() {
-                let Ok(rb) = world.get::<&RigidBody>(e) else { continue };
+                let Ok(rb) = world.get::<&RigidBody>(e) else {
+                    continue;
+                };
                 if rb.kind == BodyKind::Dynamic {
                     continue;
                 }
-                let Ok(t) = world.get::<&Transform>(e) else { continue };
+                let Ok(t) = world.get::<&Transform>(e) else {
+                    continue;
+                };
                 if let Some(b) = self.p2.bodies.get_mut(bh) {
                     b.set_translation(r2::Vector::new(t.position.x, t.position.y), false);
-                    b.set_rotation(r2::nalgebra::UnitComplex::new(t.rotation.z.to_radians()), false);
+                    b.set_rotation(
+                        r2::nalgebra::UnitComplex::new(t.rotation.z.to_radians()),
+                        false,
+                    );
                 }
             }
         } else {
             for (e, bh) in self.map3.clone() {
-                let Ok(rb) = world.get::<&RigidBody>(e) else { continue };
+                let Ok(rb) = world.get::<&RigidBody>(e) else {
+                    continue;
+                };
                 if rb.kind == BodyKind::Dynamic {
                     continue;
                 }
-                let Ok(t) = world.get::<&Transform>(e) else { continue };
+                let Ok(t) = world.get::<&Transform>(e) else {
+                    continue;
+                };
                 let quat = t.quat();
                 if let Some(b) = self.p3.bodies.get_mut(bh) {
-                    b.set_translation(r3::Vector::new(t.position.x, t.position.y, t.position.z), false);
+                    b.set_translation(
+                        r3::Vector::new(t.position.x, t.position.y, t.position.z),
+                        false,
+                    );
                     b.set_rotation(
-                        r3::nalgebra::Unit::new_normalize(r3::nalgebra::Quaternion::new(quat.w, quat.x, quat.y, quat.z)),
+                        r3::nalgebra::Unit::new_normalize(r3::nalgebra::Quaternion::new(
+                            quat.w, quat.x, quat.y, quat.z,
+                        )),
                         false,
                     );
                 }
@@ -411,7 +461,9 @@ impl Physics {
     fn pull_transforms(&mut self, world: &mut World) {
         if self.dimension == Dimension::D2 {
             for (e, bh) in self.map2.clone() {
-                let Some(b) = self.p2.bodies.get(bh) else { continue };
+                let Some(b) = self.p2.bodies.get(bh) else {
+                    continue;
+                };
                 let pos = b.translation();
                 let rot = b.rotation();
                 if let Ok(mut t) = world.get::<&mut Transform>(e) {
@@ -422,14 +474,17 @@ impl Physics {
             }
         } else {
             for (e, bh) in self.map3.clone() {
-                let Some(b) = self.p3.bodies.get(bh) else { continue };
+                let Some(b) = self.p3.bodies.get(bh) else {
+                    continue;
+                };
                 let pos = b.translation();
                 let q = b.rotation().quaternion();
                 if let Ok(mut t) = world.get::<&mut Transform>(e) {
                     t.position.x = pos.x;
                     t.position.y = pos.y;
                     t.position.z = pos.z;
-                    let eu = glam::Quat::from_xyzw(q.i, q.j, q.k, q.w).to_euler(glam::EulerRot::XYZ);
+                    let eu =
+                        glam::Quat::from_xyzw(q.i, q.j, q.k, q.w).to_euler(glam::EulerRot::XYZ);
                     t.rotation = Vec3::new(eu.0.to_degrees(), eu.1.to_degrees(), eu.2.to_degrees());
                 }
             }
@@ -472,13 +527,23 @@ impl Physics {
         out
     }
 
-    fn pair2(&self, c1: r2::ColliderHandle, c2: r2::ColliderHandle, started: bool) -> Option<CollisionPair> {
+    fn pair2(
+        &self,
+        c1: r2::ColliderHandle,
+        c2: r2::ColliderHandle,
+        started: bool,
+    ) -> Option<CollisionPair> {
         let a = *self.col2ent.get(&c1)?;
         let b = *self.col2ent.get(&c2)?;
         Some(CollisionPair { a, b, started })
     }
 
-    fn pair3(&self, c1: r3::ColliderHandle, c2: r3::ColliderHandle, started: bool) -> Option<CollisionPair> {
+    fn pair3(
+        &self,
+        c1: r3::ColliderHandle,
+        c2: r3::ColliderHandle,
+        started: bool,
+    ) -> Option<CollisionPair> {
         let a = *self.col3ent.get(&c1)?;
         let b = *self.col3ent.get(&c2)?;
         Some(CollisionPair { a, b, started })
@@ -490,48 +555,90 @@ impl Physics {
 
     pub fn set_velocity(&mut self, e: Entity, v: Vec3, relative: bool) {
         if self.dimension == Dimension::D2 {
-            if let Some(bh) = self.map2.get(&e) {
-                if let Some(b) = self.p2.bodies.get_mut(*bh) {
-                    let target = r2::Vector::new(v.x, v.y);
-                    let new_v = if relative { b.linvel() + target } else { target };
-                    b.set_linvel(new_v, true);
-                }
-            }
-        } else if let Some(bh) = self.map3.get(&e) {
-            if let Some(b) = self.p3.bodies.get_mut(*bh) {
-                let target = r3::Vector::new(v.x, v.y, v.z);
-                let new_v = if relative { b.linvel() + target } else { target };
+            if let Some(bh) = self.map2.get(&e)
+                && let Some(b) = self.p2.bodies.get_mut(*bh)
+            {
+                let target = r2::Vector::new(v.x, v.y);
+                let new_v = if relative {
+                    b.linvel() + target
+                } else {
+                    target
+                };
                 b.set_linvel(new_v, true);
             }
+        } else if let Some(bh) = self.map3.get(&e)
+            && let Some(b) = self.p3.bodies.get_mut(*bh)
+        {
+            let target = r3::Vector::new(v.x, v.y, v.z);
+            let new_v = if relative {
+                b.linvel() + target
+            } else {
+                target
+            };
+            b.set_linvel(new_v, true);
+        }
+    }
+
+    /// Set only the X component of linear velocity.
+    pub fn set_vel_x(&mut self, e: Entity, x: f32) {
+        if self.dimension == Dimension::D2 {
+            if let Some(bh) = self.map2.get(&e)
+                && let Some(b) = self.p2.bodies.get_mut(*bh)
+            {
+                let v = b.linvel();
+                b.set_linvel(r2::Vector::new(x, v.y), true);
+            }
+        } else if let Some(bh) = self.map3.get(&e)
+            && let Some(b) = self.p3.bodies.get_mut(*bh)
+        {
+            let v = *b.linvel();
+            b.set_linvel(r3::Vector::new(x, v.y, v.z), true);
+        }
+    }
+
+    /// Set only the Y component of linear velocity.
+    pub fn set_vel_y(&mut self, e: Entity, y: f32) {
+        if self.dimension == Dimension::D2 {
+            if let Some(bh) = self.map2.get(&e)
+                && let Some(b) = self.p2.bodies.get_mut(*bh)
+            {
+                let v = b.linvel();
+                b.set_linvel(r2::Vector::new(v.x, y), true);
+            }
+        } else if let Some(bh) = self.map3.get(&e)
+            && let Some(b) = self.p3.bodies.get_mut(*bh)
+        {
+            let v = *b.linvel();
+            b.set_linvel(r3::Vector::new(v.x, y, v.z), true);
         }
     }
 
     pub fn apply_impulse(&mut self, e: Entity, v: Vec3) {
         if self.dimension == Dimension::D2 {
-            if let Some(bh) = self.map2.get(&e) {
-                if let Some(b) = self.p2.bodies.get_mut(*bh) {
-                    b.apply_impulse(r2::Vector::new(v.x, v.y), true);
-                }
+            if let Some(bh) = self.map2.get(&e)
+                && let Some(b) = self.p2.bodies.get_mut(*bh)
+            {
+                b.apply_impulse(r2::Vector::new(v.x, v.y), true);
             }
-        } else if let Some(bh) = self.map3.get(&e) {
-            if let Some(b) = self.p3.bodies.get_mut(*bh) {
-                b.apply_impulse(r3::Vector::new(v.x, v.y, v.z), true);
-            }
+        } else if let Some(bh) = self.map3.get(&e)
+            && let Some(b) = self.p3.bodies.get_mut(*bh)
+        {
+            b.apply_impulse(r3::Vector::new(v.x, v.y, v.z), true);
         }
     }
 
     /// Teleport a body (rules `Translate`); wakes it.
     pub fn teleport(&mut self, e: Entity, pos: Vec3) {
         if self.dimension == Dimension::D2 {
-            if let Some(bh) = self.map2.get(&e) {
-                if let Some(b) = self.p2.bodies.get_mut(*bh) {
-                    b.set_translation(r2::Vector::new(pos.x, pos.y), true);
-                }
+            if let Some(bh) = self.map2.get(&e)
+                && let Some(b) = self.p2.bodies.get_mut(*bh)
+            {
+                b.set_translation(r2::Vector::new(pos.x, pos.y), true);
             }
-        } else if let Some(bh) = self.map3.get(&e) {
-            if let Some(b) = self.p3.bodies.get_mut(*bh) {
-                b.set_translation(r3::Vector::new(pos.x, pos.y, pos.z), true);
-            }
+        } else if let Some(bh) = self.map3.get(&e)
+            && let Some(b) = self.p3.bodies.get_mut(*bh)
+        {
+            b.set_translation(r3::Vector::new(pos.x, pos.y, pos.z), true);
         }
     }
 
@@ -578,27 +685,37 @@ impl Physics3 {
 }
 
 fn collider_builders_2d(c: &Collider, restitution: f32, friction: f32) -> Vec<r2::ColliderBuilder> {
-    vec![match &c.shape {
-        ColliderShape::Box { half } => r2::ColliderBuilder::cuboid(half.x.abs(), half.y.abs()),
-        ColliderShape::Ball { r } => r2::ColliderBuilder::ball(r.abs()),
-        ColliderShape::Capsule { half_height, r } => r2::ColliderBuilder::capsule_y(half_height.abs(), r.abs()),
-    }
-    .sensor(c.sensor)
-    .restitution(restitution)
-    .friction(friction)
-    .active_events(r2::ActiveEvents::COLLISION_EVENTS)]
+    vec![
+        match &c.shape {
+            ColliderShape::Box { half } => r2::ColliderBuilder::cuboid(half.x.abs(), half.y.abs()),
+            ColliderShape::Ball { r } => r2::ColliderBuilder::ball(r.abs()),
+            ColliderShape::Capsule { half_height, r } => {
+                r2::ColliderBuilder::capsule_y(half_height.abs(), r.abs())
+            }
+        }
+        .sensor(c.sensor)
+        .restitution(restitution)
+        .friction(friction)
+        .active_events(r2::ActiveEvents::COLLISION_EVENTS),
+    ]
 }
 
 fn collider_builders_3d(c: &Collider, restitution: f32, friction: f32) -> Vec<r3::ColliderBuilder> {
-    vec![match &c.shape {
-        ColliderShape::Box { half } => r3::ColliderBuilder::cuboid(half.x.abs(), half.y.abs(), half.z.abs()),
-        ColliderShape::Ball { r } => r3::ColliderBuilder::ball(r.abs()),
-        ColliderShape::Capsule { half_height, r } => r3::ColliderBuilder::capsule_y(half_height.abs(), r.abs()),
-    }
-    .sensor(c.sensor)
-    .restitution(restitution)
-    .friction(friction)
-    .active_events(r3::ActiveEvents::COLLISION_EVENTS)]
+    vec![
+        match &c.shape {
+            ColliderShape::Box { half } => {
+                r3::ColliderBuilder::cuboid(half.x.abs(), half.y.abs(), half.z.abs())
+            }
+            ColliderShape::Ball { r } => r3::ColliderBuilder::ball(r.abs()),
+            ColliderShape::Capsule { half_height, r } => {
+                r3::ColliderBuilder::capsule_y(half_height.abs(), r.abs())
+            }
+        }
+        .sensor(c.sensor)
+        .restitution(restitution)
+        .friction(friction)
+        .active_events(r3::ActiveEvents::COLLISION_EVENTS),
+    ]
 }
 
 #[cfg(test)]
@@ -611,15 +728,35 @@ mod tests {
     fn gravity_and_events_2d() {
         let mut world = World::default();
         let _floor = world.spawn((
-            Transform { position: Vec3::new(0.0, -5.0, 0.0), ..Default::default() },
-            RigidBody { kind: BodyKind::Static, ..Default::default() },
-            Collider { shape: ColliderShape::Box { half: Vec3::new(10.0, 0.5, 1.0) }, sensor: false },
+            Transform {
+                position: Vec3::new(0.0, -5.0, 0.0),
+                ..Default::default()
+            },
+            RigidBody {
+                kind: BodyKind::Static,
+                ..Default::default()
+            },
+            Collider {
+                shape: ColliderShape::Box {
+                    half: Vec3::new(10.0, 0.5, 1.0),
+                },
+                sensor: false,
+            },
             Tag("floor".into()),
         ));
         let ball = world.spawn((
-            Transform { position: Vec3::new(0.0, 5.0, 0.0), ..Default::default() },
-            RigidBody { kind: BodyKind::Dynamic, ..Default::default() },
-            Collider { shape: ColliderShape::Ball { r: 0.5 }, sensor: false },
+            Transform {
+                position: Vec3::new(0.0, 5.0, 0.0),
+                ..Default::default()
+            },
+            RigidBody {
+                kind: BodyKind::Dynamic,
+                ..Default::default()
+            },
+            Collider {
+                shape: ColliderShape::Ball { r: 0.5 },
+                sensor: false,
+            },
         ));
 
         let mut physics = Physics::new(Dimension::D2);
@@ -638,7 +775,10 @@ mod tests {
         assert!(fell, "ball should fall under gravity");
         assert!(saw_start, "collision events should fire on impact");
         let y = world.get::<&Transform>(ball).unwrap().position.y;
-        assert!((-4.2..=-3.4).contains(&y), "ball should rest on the floor, got {y}");
+        assert!(
+            (-4.2..=-3.4).contains(&y),
+            "ball should rest on the floor, got {y}"
+        );
     }
 
     #[test]
@@ -646,8 +786,15 @@ mod tests {
         let mut world = World::default();
         let ball = world.spawn((
             Transform::default(),
-            RigidBody { kind: BodyKind::Dynamic, gravity_scale: 0.0, ..Default::default() },
-            Collider { shape: ColliderShape::Ball { r: 0.5 }, sensor: false },
+            RigidBody {
+                kind: BodyKind::Dynamic,
+                gravity_scale: 0.0,
+                ..Default::default()
+            },
+            Collider {
+                shape: ColliderShape::Ball { r: 0.5 },
+                sensor: false,
+            },
         ));
         let mut physics = Physics::new(Dimension::D2);
         physics.update(&mut world, 1.0 / 60.0);

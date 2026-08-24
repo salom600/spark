@@ -1,0 +1,13 @@
+// spark project: Ember Run — 2D precision platformer demo.
+// Run with: spark --game demos/ember_run
+(
+    name: "Ember Run",
+    dimension: D2,
+    main_scene: "scenes/level.scene",
+    clear: (r: 0.12, g: 0.08, b: 0.2, a: 1.0),
+    input: {
+        "left":  [Key("ArrowLeft"), Key("KeyA"), Stick("Left")],
+        "right": [Key("ArrowRight"), Key("KeyD"), Stick("Right")],
+        "jump":  [Key("Space"), Pad("South")],
+    },
+)

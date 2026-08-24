@@ -93,11 +93,7 @@ impl Audio {
 
     /// Housekeeping: loop drained music.
     pub fn update(&mut self) {
-        let drained = self
-            .music
-            .as_ref()
-            .map(|s| s.empty())
-            .unwrap_or(false);
+        let drained = self.music.as_ref().map(|s| s.empty()).unwrap_or(false);
         if drained && !self.music_bytes.is_empty() {
             let bytes = std::mem::take(&mut self.music_bytes);
             let vol = self.music_volume;

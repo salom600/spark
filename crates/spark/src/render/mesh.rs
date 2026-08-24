@@ -5,7 +5,6 @@
 //!   PCF shadow map, up to 16 point lights, ambient + emissive, `unlit` flag).
 //! * `shadow.wgsl` — depth-only variant used by the shadow pass.
 
-
 use super::MeshInstance;
 use crate::math::Vertex;
 
@@ -31,7 +30,11 @@ const INSTANCE_LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLay
 };
 
 impl MeshPass {
-    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat, shadow_bgl: &wgpu::BindGroupLayout) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        shadow_bgl: &wgpu::BindGroupLayout,
+    ) -> Self {
         // Material bind group: albedo texture + regular sampler.
         let mat_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("spark.mesh.mat"),
@@ -88,7 +91,10 @@ impl MeshPass {
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
-            primitive: wgpu::PrimitiveState { cull_mode: Some(wgpu::Face::Back), ..Default::default() },
+            primitive: wgpu::PrimitiveState {
+                cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
                 depth_write_enabled: true,
@@ -111,13 +117,20 @@ impl MeshPass {
                 buffers: &[Vertex::LAYOUT, INSTANCE_LAYOUT],
             },
             fragment: None,
-            primitive: wgpu::PrimitiveState { cull_mode: Some(wgpu::Face::Back), ..Default::default() },
+            primitive: wgpu::PrimitiveState {
+                cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
                 depth_write_enabled: true,
                 depth_compare: wgpu::CompareFunction::Less,
                 stencil: Default::default(),
-                bias: wgpu::DepthBiasState { constant: 2, slope_scale: 2.0, clamp: 0.0 },
+                bias: wgpu::DepthBiasState {
+                    constant: 2,
+                    slope_scale: 2.0,
+                    clamp: 0.0,
+                },
             }),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
@@ -152,12 +165,20 @@ impl MeshPass {
             label: Some("spark.mesh.mat"),
             layout: &self.mat_bgl,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(tex_view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(sampler) },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(tex_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(sampler),
+                },
             ],
         });
         // wgpu handles are cheaply cloneable; clone ends the &mut self borrow.
-        let buf = self.ensure_instance_buf(device, instances.len() as u64, false).clone();
+        let buf = self
+            .ensure_instance_buf(device, instances.len() as u64, false)
+            .clone();
         queue.write_buffer(&buf, 0, instances);
 
         rpass.set_pipeline(&self.pipeline);
@@ -170,6 +191,7 @@ impl MeshPass {
         rpass.draw_indexed(0..mesh.count, 0, 0..count);
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn draw_shadow(
         &mut self,
         device: &wgpu::Device,
@@ -183,9 +205,14 @@ impl MeshPass {
         let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("spark.mesh.shadow_group"),
             layout: shadow_bgl,
-            entries: &[wgpu::BindGroupEntry { binding: 0, resource: globals_buf.as_entire_binding() }],
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: globals_buf.as_entire_binding(),
+            }],
         });
-        let buf = self.ensure_instance_buf(device, instances.len() as u64, true).clone();
+        let buf = self
+            .ensure_instance_buf(device, instances.len() as u64, true)
+            .clone();
         queue.write_buffer(&buf, 0, instances);
 
         rpass.set_pipeline(&self.shadow_pipeline);
@@ -197,16 +224,25 @@ impl MeshPass {
         rpass.draw_indexed(0..mesh.count, 0, 0..count);
     }
 
-    fn ensure_instance_buf(&mut self, device: &wgpu::Device, needed: u64, shadow: bool) -> &wgpu::Buffer {
+    fn ensure_instance_buf(
+        &mut self,
+        device: &wgpu::Device,
+        needed: u64,
+        shadow: bool,
+    ) -> &wgpu::Buffer {
         let (buf, cap) = if shadow {
             (&mut self.shadow_instance_buf, &mut self.shadow_instance_cap)
         } else {
             (&mut self.instance_buf, &mut self.instance_cap)
         };
-        if buf.as_ref().is_none_or(|b| *cap < needed) {
+        if buf.as_ref().is_none_or(|_b| *cap < needed) {
             let size = needed.max(8192);
             *buf = Some(device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some(if shadow { "spark.mesh.shadow_instances" } else { "spark.mesh.instances" }),
+                label: Some(if shadow {
+                    "spark.mesh.shadow_instances"
+                } else {
+                    "spark.mesh.instances"
+                }),
                 size,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,

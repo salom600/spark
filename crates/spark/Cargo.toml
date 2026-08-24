@@ -33,3 +33,6 @@ winit.workspace = true
 
 [features]
 debug_phys = []
+
+[dev-dependencies]
+winit.workspace = true

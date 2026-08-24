@@ -36,13 +36,18 @@ impl Project {
     }
 
     pub fn save_dir(&self, dir: &Path) -> anyhow::Result<()> {
-        let text = ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default().struct_names(true))?;
+        let text =
+            ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default().struct_names(true))?;
         std::fs::write(dir.join("project.ron"), text)?;
         Ok(())
     }
 
     /// Create a fresh project from the bundled blank template.
-    pub fn create_from_template(dir: &Path, name: &str, dimension: Dimension) -> anyhow::Result<PathBuf> {
+    pub fn create_from_template(
+        dir: &Path,
+        name: &str,
+        dimension: Dimension,
+    ) -> anyhow::Result<PathBuf> {
         let dir = dir.to_path_buf();
         std::fs::create_dir_all(dir.join("assets"))?;
         std::fs::create_dir_all(dir.join("scenes"))?;

@@ -1,0 +1,200 @@
+// Physics Playground — 3D sandbox scene.
+// All behavior via rules: spawn/clear/toggle-gravity, no Rust code.
+(
+    name: "Sandbox",
+    dimension: D3,
+    ambient: 0.45,
+    sky: (r: 0.08, g: 0.09, b: 0.12, a: 1.0),
+    globals: {
+        "objects": 0,
+        "gravity_on": 1,
+    },
+    entities: [
+        (
+            name: Some("Camera"),
+            transform: Some((
+                position: (0.0, 6.0, 14.0),
+                rotation: (-18.0, 0.0, 0.0),
+            )),
+            components: [ Camera((
+                kind: Perspective(fov_deg: 60.0),
+                clear: (r: 0.08, g: 0.09, b: 0.12, a: 1.0),
+                near: 0.1,
+                far: 200.0,
+            )) ],
+        ),
+        (
+            name: Some("Sun"),
+            transform: Some(( position: (12.0, 18.0, 8.0), )),
+            components: [ Light((
+                kind: Directional(direction: (-0.45, -0.75, -0.3)),
+                color: (r: 1.0, g: 0.96, b: 0.9, a: 1.0),
+                intensity: 2.6,
+            )) ],
+        ),
+        (
+            name: Some("Lamp"),
+            transform: Some(( position: (-6.0, 5.0, -4.0), )),
+            components: [ Light((
+                kind: Point(range: 18.0),
+                color: (r: 0.4, g: 0.7, b: 1.0, a: 1.0),
+                intensity: 6.0,
+            )) ],
+        ),
+        // ------------------------------------------------------------------
+        // Floor: big checker plane (scaled builtin plane)
+        // ------------------------------------------------------------------
+        (
+            name: Some("Floor"), tag: Some("ground"),
+            transform: Some(( position: (0.0, 0.0, 0.0), scale: (40.0, 1.0, 40.0), )),
+            components: [
+                MeshRenderer((
+                    mesh: "plane",
+                    material: (
+                        albedo: (r: 0.9, g: 0.9, b: 0.92, a: 1.0),
+                        texture: Some("assets/textures/checker.png"),
+                        emissive: (r: 0.0, g: 0.0, b: 0.0, a: 1.0),
+                        metallic: 0.0,
+                        roughness: 0.85,
+                        unlit: false,
+                    ),
+                )),
+                RigidBody(( kind: Static, friction: 0.7, )),
+                Collider(( shape: Box(half: (20.0, 0.5, 20.0)), sensor: false )),
+            ],
+        ),
+        // ------------------------------------------------------------------
+        // Back wall (grid texture) for visual grounding
+        // ------------------------------------------------------------------
+        (
+            name: Some("Back Wall"),
+            transform: Some(( position: (0.0, 4.0, -10.0), scale: (40.0, 8.0, 1.0), )),
+            components: [
+                MeshRenderer((
+                    mesh: "plane",
+                    material: (
+                        albedo: (r: 0.55, g: 0.58, b: 0.65, a: 1.0),
+                        texture: Some("assets/textures/grid.png"),
+                        emissive: (r: 0.0, g: 0.0, b: 0.0, a: 1.0),
+                        metallic: 0.0,
+                        roughness: 0.9,
+                        unlit: false,
+                    ),
+                )),
+                RigidBody(( kind: Static, )),
+                Collider(( shape: Box(half: (20.0, 4.0, 0.5)), sensor: false )),
+            ],
+        ),
+        // ------------------------------------------------------------------
+        // Static starter props: a few ramps and pillars
+        // ------------------------------------------------------------------
+        (
+            name: Some("Pillar A"), tag: Some("prop"),
+            transform: Some(( position: (-5.0, 1.5, -2.0), )),
+            components: [
+                MeshRenderer((
+                    mesh: "cube",
+                    material: (
+                        albedo: (r: 0.75, g: 0.45, b: 0.35, a: 1.0),
+                        emissive: (r: 0.0, g: 0.0, b: 0.0, a: 1.0),
+                        metallic: 0.05,
+                        roughness: 0.6,
+                        unlit: false,
+                    ),
+                )),
+                RigidBody(( kind: Static, )),
+                Collider(( shape: Box(half: (0.75, 1.5, 0.75)), sensor: false )),
+            ],
+        ),
+        (
+            name: Some("Pillar B"), tag: Some("prop"),
+            transform: Some(( position: (5.0, 2.5, -3.0), )),
+            components: [
+                MeshRenderer((
+                    mesh: "cube",
+                    material: (
+                        albedo: (r: 0.35, g: 0.55, b: 0.75, a: 1.0),
+                        emissive: (r: 0.0, g: 0.0, b: 0.0, a: 1.0),
+                        metallic: 0.1,
+                        roughness: 0.5,
+                        unlit: false,
+                    ),
+                )),
+                RigidBody(( kind: Static, )),
+                Collider(( shape: Box(half: (1.0, 2.5, 1.0)), sensor: false )),
+            ],
+        ),
+        (
+            name: Some("Ramp"),
+            tag: Some("prop"),
+            transform: Some(( position: (0.0, 0.9, 2.0), rotation: (0.0, 0.0, -18.0), scale: (6.0, 0.4, 3.0), )),
+            components: [
+                MeshRenderer((
+                    mesh: "cube",
+                    material: (
+                        albedo: (r: 0.5, g: 0.75, b: 0.5, a: 1.0),
+                        emissive: (r: 0.0, g: 0.0, b: 0.0, a: 1.0),
+                        metallic: 0.0,
+                        roughness: 0.7,
+                        unlit: false,
+                    ),
+                )),
+                RigidBody(( kind: Static, friction: 0.6, )),
+                Collider(( shape: Box(half: (0.5, 0.2, 0.5)), sensor: false )),
+            ],
+        ),
+        // ------------------------------------------------------------------
+        // The Spawner: an invisible controller entity whose rules ARE the game
+        // ------------------------------------------------------------------
+        (
+            name: Some("Spawner"),
+            tag: Some("controller"),
+            transform: Some(( position: (0.0, 8.0, 0.0), )),
+            components: [ Rules((
+                rules: [
+                    // -- drop a box --
+                    ( on: KeyPressed("Space"),
+                      when: [],
+                      run: [
+                          Spawn( prefab: "prefabs/box.ron", offset: (0.0, 0.0, 0.0) ),
+                          AddVar( scope: Global, name: "objects", delta: 1 ),
+                          PlaySound( sound: "assets/sfx/pop.wav", volume: 0.5 ),
+                      ] ),
+                    // -- drop a ball --
+                    ( on: KeyPressed("KeyB"),
+                      when: [],
+                      run: [
+                          Spawn( prefab: "prefabs/ball.ron", offset: (0.0, 0.0, 0.0) ),
+                          AddVar( scope: Global, name: "objects", delta: 1 ),
+                          PlaySound( sound: "assets/sfx/pop.wav", volume: 0.6 ),
+                      ] ),
+                    // -- clear all spawned objects --
+                    ( on: KeyPressed("KeyC"),
+                      when: [],
+                      run: [
+                          DestroyTagged("spawned"),
+                          SetVar( scope: Global, name: "objects", value: 0 ),
+                      ] ),
+                    // -- gravity: G on / H off (rules evaluate within one tick,
+                    //    so a single-key toggle would fire both rules at once) --
+                    ( on: KeyPressed("KeyH"),
+                      when: [ Var( scope: Global, name: "gravity_on", op: Eq, value: 1 ) ],
+                      run: [
+                          SetGravity( g: (0.0, 0.0, 0.0) ),
+                          SetVar( scope: Global, name: "gravity_on", value: 0 ),
+                          Log("gravity off"),
+                      ] ),
+                    ( on: KeyPressed("KeyG"),
+                      when: [ Var( scope: Global, name: "gravity_on", op: Eq, value: 0 ) ],
+                      run: [
+                          SetGravity( g: (0.0, -9.81, 0.0) ),
+                          SetVar( scope: Global, name: "gravity_on", value: 1 ),
+                          Log("gravity on"),
+                      ] ),
+                    // -- escape quits --
+                    ( on: KeyPressed("Escape"), when: [], run: [ Quit ] ),
+                ],
+            )) ],
+        ),
+    ],
+)

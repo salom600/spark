@@ -12,8 +12,8 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::Receiver;
 use std::sync::Arc;
+use std::sync::mpsc::Receiver;
 
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 
@@ -90,6 +90,8 @@ pub struct Assets {
     meshes: HashMap<String, MeshData>,
     sounds: HashMap<String, Arc<Vec<u8>>>,
     models: HashMap<String, Arc<Vec<GltfNode>>>,
+    /// Held alive: dropping the watcher stops file notifications.
+    #[allow(dead_code)]
     watcher: Option<notify::RecommendedWatcher>,
     events: Option<Receiver<Event>>,
     /// Paths re-imported since the last `take_reloaded` (for live updates).
@@ -198,7 +200,11 @@ impl Assets {
             let (vertices, indices) = builtin_mesh(asset)?;
             self.meshes.insert(
                 asset.to_string(),
-                MeshData { vertices, indices, material: Material::default() },
+                MeshData {
+                    vertices,
+                    indices,
+                    material: Material::default(),
+                },
             );
         }
         if !self.meshes.contains_key(asset) {
@@ -257,11 +263,11 @@ impl Assets {
     fn index_mut_for(&mut self, path: &Path) -> Option<&mut AssetMeta> {
         let key = normalize(path, &self.root);
         if !self.index.contains_key(&key) && path.is_file() {
-            let kind = AssetKind::from_extension(
-                path.extension().and_then(|e| e.to_str()).unwrap_or(""),
-            );
+            let kind =
+                AssetKind::from_extension(path.extension().and_then(|e| e.to_str()).unwrap_or(""));
             if kind != AssetKind::Other {
-                self.index.insert(key.clone(), AssetMeta { kind, version: 0 });
+                self.index
+                    .insert(key.clone(), AssetMeta { kind, version: 0 });
             }
         }
         self.index.get_mut(&key)
@@ -278,16 +284,15 @@ impl Assets {
         }
         match kind {
             AssetKind::Texture => {
-                if let Some(tex) = self.textures.get_mut(&key) {
-                    if let Ok(bytes) = std::fs::read(path) {
-                        if let Some((w, h, rgba)) = decode_image(&bytes) {
-                            tex.width = w;
-                            tex.height = h;
-                            tex.rgba = rgba;
-                            tex.version += 1;
-                            self.reloaded.push(key.clone());
-                        }
-                    }
+                if let Some(tex) = self.textures.get_mut(&key)
+                    && let Ok(bytes) = std::fs::read(path)
+                    && let Some((w, h, rgba)) = decode_image(&bytes)
+                {
+                    tex.width = w;
+                    tex.height = h;
+                    tex.rgba = rgba;
+                    tex.version += 1;
+                    self.reloaded.push(key.clone());
                 }
             }
             AssetKind::Model => {
@@ -324,30 +329,36 @@ impl Assets {
         let imported = crate::render::gltf::import(&fs_path)?;
         let mut nodes = Vec::new();
         for node in imported.root_nodes {
-            nodes.push(self.register_gltf_node(&model_path, node));
+            nodes.push(self.register_gltf_node(model_path, node));
         }
         for (i, mut prim) in imported.primitives.into_iter().enumerate() {
             // Rewrite "#texN" refs to full "{model_path}#texN" asset paths.
-            if let Some(tex) = &prim.material.texture {
-                if tex.starts_with('#') {
-                    prim.material.texture = Some(format!("{model_path}{tex}"));
-                }
+            if let Some(tex) = &prim.material.texture
+                && tex.starts_with('#')
+            {
+                prim.material.texture = Some(format!("{model_path}{tex}"));
             }
             let key = format!("{model_path}#{i}");
-            self.meshes.insert(key.clone(), MeshData {
-                vertices: prim.vertices,
-                indices: prim.indices,
-                material: prim.material,
-            });
+            self.meshes.insert(
+                key.clone(),
+                MeshData {
+                    vertices: prim.vertices,
+                    indices: prim.indices,
+                    material: prim.material,
+                },
+            );
         }
         for (i, tex) in imported.textures.into_iter().enumerate() {
             let key = format!("{model_path}#tex{i}");
-            self.textures.insert(key, TextureData {
-                width: tex.0,
-                height: tex.1,
-                rgba: tex.2,
-                version: 0,
-            });
+            self.textures.insert(
+                key,
+                TextureData {
+                    width: tex.0,
+                    height: tex.1,
+                    rgba: tex.2,
+                    version: 0,
+                },
+            );
         }
         self.models.insert(model_path.to_string(), Arc::new(nodes));
         Some(())
@@ -377,7 +388,9 @@ impl Assets {
 }
 
 fn walk_tree(root: &Path, dir: &Path, out: &mut HashMap<String, AssetMeta>) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let p = entry.path();
         if p.is_dir() {
@@ -436,10 +449,26 @@ pub fn builtin_mesh(name: &str) -> Option<(Vec<Vertex>, Vec<u32>)> {
                     &mut vertices,
                     &mut indices,
                     [
-                        Vertex { position: (c - u * h - v * h).to_array(), normal: n.to_array(), uv: [0.0, 0.0] },
-                        Vertex { position: (c + u * h - v * h).to_array(), normal: n.to_array(), uv: [1.0, 0.0] },
-                        Vertex { position: (c + u * h + v * h).to_array(), normal: n.to_array(), uv: [1.0, 1.0] },
-                        Vertex { position: (c - u * h + v * h).to_array(), normal: n.to_array(), uv: [0.0, 1.0] },
+                        Vertex {
+                            position: (c - u * h - v * h).to_array(),
+                            normal: n.to_array(),
+                            uv: [0.0, 0.0],
+                        },
+                        Vertex {
+                            position: (c + u * h - v * h).to_array(),
+                            normal: n.to_array(),
+                            uv: [1.0, 0.0],
+                        },
+                        Vertex {
+                            position: (c + u * h + v * h).to_array(),
+                            normal: n.to_array(),
+                            uv: [1.0, 1.0],
+                        },
+                        Vertex {
+                            position: (c - u * h + v * h).to_array(),
+                            normal: n.to_array(),
+                            uv: [0.0, 1.0],
+                        },
                     ],
                 );
             }
@@ -450,11 +479,7 @@ pub fn builtin_mesh(name: &str) -> Option<(Vec<Vertex>, Vec<u32>)> {
                 let phi = std::f32::consts::PI * i as f32 / stacks as f32;
                 for j in 0..=sectors {
                     let theta = std::f32::consts::TAU * j as f32 / sectors as f32;
-                    let n = Vec3::new(
-                        phi.sin() * theta.cos(),
-                        phi.cos(),
-                        phi.sin() * theta.sin(),
-                    );
+                    let n = Vec3::new(phi.sin() * theta.cos(), phi.cos(), phi.sin() * theta.sin());
                     vertices.push(Vertex {
                         position: (n * 0.5).to_array(),
                         normal: n.to_array(),
@@ -474,20 +499,52 @@ pub fn builtin_mesh(name: &str) -> Option<(Vec<Vertex>, Vec<u32>)> {
             &mut vertices,
             &mut indices,
             [
-                Vertex { position: [-0.5, 0.0, -0.5], normal: [0.0, 1.0, 0.0], uv: [0.0, 0.0] },
-                Vertex { position: [0.5, 0.0, -0.5], normal: [0.0, 1.0, 0.0], uv: [1.0, 0.0] },
-                Vertex { position: [0.5, 0.0, 0.5], normal: [0.0, 1.0, 0.0], uv: [1.0, 1.0] },
-                Vertex { position: [-0.5, 0.0, 0.5], normal: [0.0, 1.0, 0.0], uv: [0.0, 1.0] },
+                Vertex {
+                    position: [-0.5, 0.0, -0.5],
+                    normal: [0.0, 1.0, 0.0],
+                    uv: [0.0, 0.0],
+                },
+                Vertex {
+                    position: [0.5, 0.0, -0.5],
+                    normal: [0.0, 1.0, 0.0],
+                    uv: [1.0, 0.0],
+                },
+                Vertex {
+                    position: [0.5, 0.0, 0.5],
+                    normal: [0.0, 1.0, 0.0],
+                    uv: [1.0, 1.0],
+                },
+                Vertex {
+                    position: [-0.5, 0.0, 0.5],
+                    normal: [0.0, 1.0, 0.0],
+                    uv: [0.0, 1.0],
+                },
             ],
         ),
         "quad" => push_quad(
             &mut vertices,
             &mut indices,
             [
-                Vertex { position: [-0.5, -0.5, 0.0], normal: [0.0, 0.0, 1.0], uv: [0.0, 0.0] },
-                Vertex { position: [0.5, -0.5, 0.0], normal: [0.0, 0.0, 1.0], uv: [1.0, 0.0] },
-                Vertex { position: [0.5, 0.5, 0.0], normal: [0.0, 0.0, 1.0], uv: [1.0, 1.0] },
-                Vertex { position: [-0.5, 0.5, 0.0], normal: [0.0, 0.0, 1.0], uv: [0.0, 1.0] },
+                Vertex {
+                    position: [-0.5, -0.5, 0.0],
+                    normal: [0.0, 0.0, 1.0],
+                    uv: [0.0, 0.0],
+                },
+                Vertex {
+                    position: [0.5, -0.5, 0.0],
+                    normal: [0.0, 0.0, 1.0],
+                    uv: [1.0, 0.0],
+                },
+                Vertex {
+                    position: [0.5, 0.5, 0.0],
+                    normal: [0.0, 0.0, 1.0],
+                    uv: [1.0, 1.0],
+                },
+                Vertex {
+                    position: [-0.5, 0.5, 0.0],
+                    normal: [0.0, 0.0, 1.0],
+                    uv: [0.0, 1.0],
+                },
             ],
         ),
         _ => return None,

@@ -1,0 +1,11 @@
+// spark project: Physics Playground — 3D sandbox demo.
+// Run with: spark --game demos/playground
+// Controls: Space = drop a box, B = drop a ball, C = clear, G = toggle gravity,
+//           R = reset scene (restart), Esc = quit.
+(
+    name: "Physics Playground",
+    dimension: D3,
+    main_scene: "scenes/sandbox.scene",
+    clear: (r: 0.08, g: 0.09, b: 0.12, a: 1.0),
+    input: {},
+)
