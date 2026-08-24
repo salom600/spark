@@ -37,6 +37,10 @@ syn = { version = "2", features = ["full", "extra-traits"] }
 wgpu = "27"
 winit = "0.30"
 
+# Dev-only: matches wgpu 27's bundled naga so the WGSL parse test uses the
+# same front-end the engine validates with at runtime.
+naga = "27"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

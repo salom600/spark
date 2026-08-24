@@ -125,16 +125,16 @@ fn fs_main(in: VertOut) -> @location(0) vec4<f32> {
     // Point lights.
     let count = i32(globals.light_meta.x);
     for (var i: i32 = 0; i < count; i++) {
-        let meta = globals.point_lights[i * 2];
+        let point_light_meta = globals.point_lights[i * 2];
         let lcol = globals.point_lights[i * 2 + 1].rgb;
-        let to_light = meta.xyz - in.world_pos;
+        let to_light = point_light_meta.xyz - in.world_pos;
         let dist = length(to_light);
-        if (dist < 0.001 || dist > meta.w) {
+        if (dist < 0.001 || dist > point_light_meta.w) {
             continue;
         }
         let l = to_light / dist;
         let n_dot_l = max(dot(n, l), 0.0);
-        let falloff = pow(clamp(1.0 - dist / meta.w, 0.0, 1.0), 2.0);
+        let falloff = pow(clamp(1.0 - dist / point_light_meta.w, 0.0, 1.0), 2.0);
         let diff = albedo * n_dot_l;
         let spec = mix(vec3<f32>(1.0), albedo, metallic) * ggx_specular(n, l, v, roughness) * (1.0 - roughness * 0.5);
         color += lcol * (diff + spec) * falloff;

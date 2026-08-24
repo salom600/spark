@@ -35,4 +35,5 @@ winit.workspace = true
 debug_phys = []
 
 [dev-dependencies]
+naga.workspace = true
 winit.workspace = true
