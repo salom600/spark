@@ -8,8 +8,7 @@ macro_rules! wgsl_parses {
         #[test]
         fn $name() {
             let src = include_str!($path);
-            naga::front::wgsl::parse_str(src)
-                .unwrap_or_else(|e| panic!("{}: {e:?}", $path));
+            naga::front::wgsl::parse_str(src).unwrap_or_else(|e| panic!("{}: {e:?}", $path));
         }
     };
 }
