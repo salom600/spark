@@ -5,6 +5,11 @@
 //! Sprites and meshes share the camera, material and asset systems; 2D is
 //! just an orthographic camera drawing textured quads with a Z layer.
 //!
+//! The shadow map is written by the shadow pass and sampled only by the
+//! later main pass: wgpu usage scopes make DEPTH_STENCIL_WRITE exclusive,
+//! so it must never be bound as a resource inside the pass that writes it
+//! (`validate_pass_plan` enforces this ordering every frame).
+//!
 //! GPU objects are cached per asset path and invalidated by version (see
 //! `assets::Assets`), giving hot-reload for free.
 
@@ -280,6 +285,75 @@ fn cam_forward(t: &Transform) -> Vec3 {
 }
 
 // ---------------------------------------------------------------------------
+// Frame pass plan (wgpu usage-scope rules, checked on CPU)
+// ---------------------------------------------------------------------------
+
+/// One render pass's resource usage as plain data: which named depth
+/// texture it writes as its depth-stencil attachment, and which named
+/// textures its bind groups sample. Keeping the frame graph as data lets
+/// the usage-scope rules be unit-tested without a GPU (CI is headless).
+#[derive(Debug, Clone, Copy)]
+pub struct PassPlan {
+    pub label: &'static str,
+    /// Texture written as the pass's depth-stencil attachment (its label).
+    pub writes_depth: Option<&'static str>,
+    /// Textures bound as read-only resources in the pass (their labels).
+    pub samples: &'static [&'static str],
+}
+
+/// The frame graph: shadow pass (writes the shadow map) → main pass
+/// (samples it) → egui pass. The shadow pass only runs when there is
+/// something to shadow: a directional light and at least one mesh — the
+/// exact precondition `Renderer::render` checks.
+pub fn plan_frame(has_directional: bool, has_meshes: bool) -> Vec<PassPlan> {
+    let mut passes = Vec::with_capacity(3);
+    if has_directional && has_meshes {
+        passes.push(PassPlan {
+            label: "spark.shadow",
+            writes_depth: Some("spark.shadow"),
+            samples: &[],
+        });
+    }
+    passes.push(PassPlan {
+        label: "spark.main",
+        writes_depth: Some("spark.depth"),
+        samples: &["spark.shadow"],
+    });
+    passes.push(PassPlan {
+        label: "spark.egui",
+        writes_depth: None,
+        samples: &[],
+    });
+    passes
+}
+
+/// Enforce the wgpu usage-scope rules over a pass plan: a texture written
+/// as a depth attachment by any pass may only be sampled by a strictly
+/// later pass. This subsumes both hazards:
+/// * sampling a texture in the pass that writes it — DEPTH_STENCIL_WRITE is
+///   exclusive and cannot combine with RESOURCE in one usage scope;
+/// * sampling a texture before it has been written.
+///
+/// Textures that no pass writes (e.g. the zero-initialized shadow map in a
+/// frame without a shadow pass) may be sampled freely.
+pub fn validate_pass_plan(passes: &[PassPlan]) -> Result<(), String> {
+    for (i, pass) in passes.iter().enumerate() {
+        for &tex in pass.samples {
+            if let Some(writer) = passes.iter().position(|p| p.writes_depth == Some(tex))
+                && writer >= i
+            {
+                return Err(format!(
+                    "pass `{}` samples `{}`, written as depth by pass `{}` at the same \
+                     point or later — DEPTH_STENCIL_WRITE is exclusive within a usage scope",
+                    pass.label, tex, passes[writer].label
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Renderer
 // ---------------------------------------------------------------------------
 
@@ -293,6 +367,7 @@ pub struct Renderer<'window> {
     depth: wgpu::TextureView,
     shadow_view: wgpu::TextureView,
     shadow_bind: wgpu::BindGroup,
+    globals_bind: wgpu::BindGroup,
     globals_bgl: wgpu::BindGroupLayout,
     globals_buf: wgpu::Buffer,
     sprite_pass: SpritePass,
@@ -381,6 +456,17 @@ impl<'window> Renderer<'window> {
             size: std::mem::size_of::<Globals>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
+        });
+        // Globals-only bind group for passes that must NOT sample the shadow
+        // map — i.e. the shadow pass itself, which writes it as depth
+        // (DEPTH_STENCIL_WRITE is exclusive within a wgpu usage scope).
+        let globals_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("spark.globals_bind"),
+            layout: &globals_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: globals_buf.as_entire_binding(),
+            }],
         });
 
         // Shadow resources: globals + depth map + comparison sampler.
@@ -486,7 +572,7 @@ impl<'window> Renderer<'window> {
         });
 
         let sprite_pass = SpritePass::new(&device, config.format, &globals_bgl);
-        let mesh_pass = MeshPass::new(&device, config.format, &shadow_bgl);
+        let mesh_pass = MeshPass::new(&device, config.format, &shadow_bgl, &globals_bgl);
         let egui_renderer = egui_wgpu::Renderer::new(
             &device,
             config.format,
@@ -501,6 +587,7 @@ impl<'window> Renderer<'window> {
             depth,
             shadow_view,
             shadow_bind,
+            globals_bind,
             globals_bgl,
             globals_buf,
             sprite_pass,
@@ -699,6 +786,15 @@ impl<'window> Renderer<'window> {
         viewport_px: Option<(u32, u32, u32, u32)>,
         pre_submit: Vec<wgpu::CommandBuffer>,
     ) -> anyhow::Result<()> {
+        // Validate the frame's pass/resource ordering before encoding: a
+        // violation is a programmer error that wgpu would otherwise report
+        // as a fatal validation error with no source context.
+        if let Err(msg) =
+            validate_pass_plan(&plan_frame(frame.has_directional, !frame.meshes.is_empty()))
+        {
+            panic!("spark: invalid render pass plan: {msg}");
+        }
+
         if !pre_submit.is_empty() {
             self.queue.submit(pre_submit);
         }
@@ -738,7 +834,7 @@ impl<'window> Renderer<'window> {
                     &self.queue,
                     &mut rpass,
                     &gpu,
-                    &self.shadow_bind,
+                    &self.globals_bind,
                     bytemuck::cast_slice(instances),
                 );
             }

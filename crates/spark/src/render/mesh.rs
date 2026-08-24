@@ -3,7 +3,13 @@
 //! Two pipelines share the vertex/instance layouts:
 //! * `mesh.wgsl` — Cook-Torrance-flavored PBR (one directional light with a
 //!   PCF shadow map, up to 16 point lights, ambient + emissive, `unlit` flag).
-//! * `shadow.wgsl` — depth-only variant used by the shadow pass.
+//!   Group 0 = globals + shadow map + comparison sampler; group 1 = material.
+//! * `shadow.wgsl` — depth-only variant used by the shadow pass. Its group 0
+//!   is *globals-only*: that pass writes the shadow map as its depth-stencil
+//!   attachment, and wgpu usage scopes make DEPTH_STENCIL_WRITE exclusive, so
+//!   binding the shadow map as a sampled resource in the same pass is a
+//!   validation error. The map is sampled only by the main pass, which runs
+//!   after the shadow pass (ordering checked by `validate_pass_plan`).
 
 use super::MeshInstance;
 use crate::math::Vertex;
@@ -34,6 +40,7 @@ impl MeshPass {
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
         shadow_bgl: &wgpu::BindGroupLayout,
+        globals_bgl: &wgpu::BindGroupLayout,
     ) -> Self {
         // Material bind group: albedo texture + regular sampler.
         let mat_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -66,9 +73,11 @@ impl MeshPass {
             bind_group_layouts: &[shadow_bgl, &mat_bgl],
             push_constant_ranges: &[],
         });
+        // Globals-only layout for the shadow pass: it must never bind the
+        // shadow map it is writing (wgpu usage-scope rule).
         let shadow_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("spark.mesh.shadow.pl"),
-            bind_group_layouts: &[shadow_bgl],
+            bind_group_layouts: &[globals_bgl],
             push_constant_ranges: &[],
         });
 
@@ -192,12 +201,19 @@ impl MeshPass {
     }
 
     /// Draw the depth-only shadow variant. The caller passes the *pre-built*
-    /// `shadow_bind` (created once in `Renderer::build` with all 3 entries:
-    /// globals buffer + shadow texture + comparison sampler). Recreating the
-    /// bind group here used to provide only 1 entry, which mismatches the
-    /// 3-entry `shadow_bgl` layout and panics inside `create_bind_group` on
-    /// the first frame a directional light and a mesh coexist — i.e. the
-    /// very first frame after Scene → Add Cube (3D).
+    /// globals-only bind group (created once in `Renderer::build` over
+    /// `globals_bgl`: just the globals buffer at binding 0).
+    ///
+    /// Two regressions have lived on this path, both fatal on the first
+    /// frame a directional light and a mesh coexist — i.e. right after
+    /// Scene → Add Cube (3D):
+    /// * Recreating the bind group here provided only 1 entry, mismatching
+    ///   the layout's entry count, and panicked inside `create_bind_group`.
+    /// * Binding the 3-entry `shadow_bind` (which samples the shadow map)
+    ///   made the pass both write `spark.shadow` as depth and sample it in
+    ///   the same usage scope, which wgpu rejects — DEPTH_STENCIL_WRITE is
+    ///   exclusive. The shadow map may only be sampled by the main pass,
+    ///   which runs after this one.
     #[allow(clippy::too_many_arguments)]
     pub fn draw_shadow(
         &mut self,
@@ -205,7 +221,7 @@ impl MeshPass {
         queue: &wgpu::Queue,
         rpass: &mut wgpu::RenderPass<'_>,
         mesh: &super::GpuMesh,
-        shadow_bind: &wgpu::BindGroup,
+        globals_bind: &wgpu::BindGroup,
         instances: &[u8],
     ) {
         let buf = self
@@ -214,7 +230,7 @@ impl MeshPass {
         queue.write_buffer(&buf, 0, instances);
 
         rpass.set_pipeline(&self.shadow_pipeline);
-        rpass.set_bind_group(0, shadow_bind, &[]);
+        rpass.set_bind_group(0, globals_bind, &[]);
         rpass.set_vertex_buffer(0, mesh.verts.slice(..));
         rpass.set_vertex_buffer(1, buf.slice(..instances.len() as u64));
         rpass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);

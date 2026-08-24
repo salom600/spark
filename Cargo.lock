@@ -3096,6 +3096,7 @@ dependencies = [
  "hecs",
  "image",
  "log",
+ "naga",
  "notify",
  "pollster",
  "rapier2d",
