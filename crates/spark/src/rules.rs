@@ -183,6 +183,9 @@ pub enum Action {
         #[serde(default = "default_lerp")]
         lerp: f32,
     },
+    /// Switch the gameplay camera to the entity named `name` (deactivates
+    /// every other Camera).
+    UseCamera(String),
     /// Load another scene (project-relative path) at the end of the tick.
     LoadScene(String),
     /// Broadcast a message; other entities receive it next tick.
@@ -264,6 +267,9 @@ pub struct RuleRuntime {
     timer_done: HashMap<(Entity, u32), bool>,
     /// Entities spawned since the last pass (fire `Start` next).
     fresh: Vec<Entity>,
+    /// Entities whose rules have run at least once (Start gating for
+    /// entities spawned outside scene loads).
+    seen: std::collections::HashSet<Entity>,
     pub(crate) incoming: Vec<String>,
     pub camera_follow: Option<(Entity, f32)>,
     pub load_scene_request: Option<String>,
@@ -272,7 +278,20 @@ pub struct RuleRuntime {
 
 impl RuleRuntime {
     pub fn mark_fresh(&mut self, e: Entity) {
-        self.fresh.push(e);
+        if !self.fresh.contains(&e) {
+            self.fresh.push(e);
+        }
+    }
+
+    /// First time this entity's rules run? Marks it fresh (`Start` fires
+    /// this pass) and remembers it.
+    pub fn first_seen(&mut self, e: Entity) -> bool {
+        self.seen.insert(e)
+    }
+
+    /// Drain the fresh list (Start fired this pass; don't repeat it).
+    pub fn drain_fresh(&mut self) {
+        self.fresh.clear();
     }
 
     /// Queue a message for delivery next tick (also used by Rust game code).
@@ -287,6 +306,7 @@ impl RuleRuntime {
         self.timers.clear();
         self.timer_done.clear();
         self.fresh.clear();
+        self.seen.clear();
         self.incoming.clear();
         self.camera_follow = None;
         self.load_scene_request = None;
@@ -631,6 +651,17 @@ fn run_action(ctx: &mut ActionCtx, action: &Action) {
         Action::StopMusic => ctx.audio.stop_music(),
         Action::SetGravity { g } => ctx.physics.set_gravity(*g),
         Action::CameraFollowMe { lerp } => *ctx.camera_follow = Some((entity, *lerp)),
+        Action::UseCamera(name) => {
+            let target = crate::ecs::find_by_name(ctx.world, name);
+            for (_e, cam) in ctx.world.query::<&mut crate::components::Camera>().iter() {
+                cam.active = false;
+            }
+            if let Some(t) = target
+                && let Ok(mut cam) = ctx.world.get::<&mut crate::components::Camera>(t)
+            {
+                cam.active = true;
+            }
+        }
         Action::LoadScene(path) => *ctx.load_scene = Some(path.clone()),
         Action::SendMessage(m) => ctx.messages_out.push(m.clone()),
         Action::ToggleVisible => {

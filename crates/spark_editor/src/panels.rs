@@ -431,6 +431,39 @@ impl Editor {
             }
         }
 
+        // Asset drop: an asset dragged from the browser spawns an entity at
+        // the drop point (2D) or the origin (3D).
+        if !playing && let Some(asset) = self.drag_asset.clone() {
+            let over_viewport = ui.rect_contains_pointer(rect);
+            let released = ui.ctx().input(|i| i.pointer.any_released());
+            if over_viewport && released {
+                let at = if matches!(dimension, spark::scene::Dimension::D2) {
+                    ui.ctx()
+                        .input(|i| i.pointer.hover_pos())
+                        .map(|m| {
+                            gizmo::mouse_world_2d(&self.editor_cam, m, self.state.viewport_px, ppp)
+                        })
+                        .map(|w| Vec3::new(w.x, w.y, 0.0))
+                } else {
+                    None
+                };
+                self.spawn_asset_entity(&asset, at);
+                self.drag_asset = None;
+            } else if !over_viewport && released {
+                // Dropped outside the viewport: cancel.
+                self.drag_asset = None;
+            } else {
+                // Hint while dragging.
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "release to spawn here",
+                    egui::FontId::proportional(16.0),
+                    egui::Color32::WHITE,
+                );
+            }
+        }
+
         // The overlay (grid + selection + gizmo) is drawn via egui's Painter,
         // projecting 3D points with the same view_proj the GPU uses.
         let painter = ui.painter().clone();
@@ -1292,10 +1325,60 @@ impl Editor {
                     .show(ui, |ui| {
                         for path in list {
                             ui.horizontal(|ui| {
+                                // Texture thumbnail, cached by asset version
+                                // (hot-reloads when the file changes).
+                                if kind == AssetKind::Texture {
+                                    let version = self
+                                        .engine
+                                        .assets
+                                        .meta(path.as_str())
+                                        .map(|m| m.version)
+                                        .unwrap_or(0);
+                                    let cached = matches!(
+                                        self.tex_previews.get(path.as_str()),
+                                        Some((v, _)) if *v == version
+                                    );
+                                    if !cached
+                                        && let Some(tex) =
+                                            self.engine.assets.texture(path.as_str()).cloned()
+                                    {
+                                        let image = egui::ColorImage::from_rgba_unmultiplied(
+                                            [tex.width.max(1) as usize, tex.height.max(1) as usize],
+                                            &tex.rgba,
+                                        );
+                                        let handle = match self.tex_previews.get_mut(path.as_str())
+                                        {
+                                            Some((_, h)) => {
+                                                h.set(image, egui::TextureOptions::LINEAR);
+                                                h.clone()
+                                            }
+                                            None => ui.ctx().load_texture(
+                                                format!("preview:{path}"),
+                                                image,
+                                                egui::TextureOptions::LINEAR,
+                                            ),
+                                        };
+                                        self.tex_previews.insert(path.clone(), (version, handle));
+                                    }
+                                    if let Some((_, handle)) = self.tex_previews.get(path.as_str())
+                                    {
+                                        ui.image((handle.id(), egui::vec2(40.0, 40.0)));
+                                    } else {
+                                        ui.allocate_ui(egui::vec2(40.0, 40.0), |ui| {
+                                            ui.weak("?");
+                                        });
+                                    }
+                                }
                                 let selected =
                                     self.selected_asset.as_deref() == Some(path.as_str());
-                                if ui.selectable_label(selected, &path).clicked() {
+                                let row = ui.selectable_label(selected, &path);
+                                if row.clicked() {
                                     self.selected_asset = Some(path.clone());
+                                }
+                                // Dragging an asset row targets the viewport
+                                // (drop = spawn an entity for it).
+                                if row.dragged() {
+                                    self.drag_asset = Some(path.clone());
                                 }
                                 // Sound preview: play it through the engine's
                                 // audio output (real playback when a device
@@ -1475,6 +1558,28 @@ impl Editor {
                     });
                 });
             self.state.show_new_project &= open;
+        }
+        if self.state.show_import {
+            let mut open = true;
+            egui::Window::new("Import Asset")
+                .open(&mut open)
+                .show(ctx, |ui| {
+                    ui.label("Absolute or relative path of the file to import:");
+                    ui.text_edit_singleline(&mut self.state.import_path);
+                    ui.weak("The file is copied into the project's assets/ folder.");
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        if ui.button("Import").clicked() {
+                            let src = self.state.import_path.clone();
+                            self.import_asset(&src);
+                            self.state.show_import = false;
+                        }
+                        if ui.button("Cancel").clicked() {
+                            self.state.show_import = false;
+                        }
+                    });
+                });
+            self.state.show_import &= open;
         }
         if self.state.show_open_project {
             let mut open = true;
@@ -1740,6 +1845,10 @@ fn rule_actions_ui(ui: &mut egui::Ui, actions: &mut Vec<Action>) {
                         ui.strong("spawn");
                         ui.text_edit_singleline(prefab);
                     }
+                    Action::UseCamera(name) => {
+                        ui.strong("camera →");
+                        ui.text_edit_singleline(name);
+                    }
                     Action::LoadScene(s) => {
                         ui.strong("load");
                         ui.text_edit_singleline(s);
@@ -1831,6 +1940,7 @@ fn add_action_button(ui: &mut egui::Ui, actions: &mut Vec<Action>) {
                     },
                 ),
                 ("CameraFollowMe", Action::CameraFollowMe { lerp: 0.1 }),
+                ("UseCamera", Action::UseCamera("Camera".into())),
                 ("LoadScene", Action::LoadScene("scenes/main.scene".into())),
                 ("SendMessage", Action::SendMessage("msg".into())),
                 ("ToggleVisible", Action::ToggleVisible),

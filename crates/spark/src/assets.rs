@@ -140,6 +140,34 @@ impl Assets {
         &self.root
     }
 
+    /// Re-walk the project tree, indexing new files immediately (the
+    /// watcher does this too, but asynchronously). Existing entries keep
+    /// their versions so hot-reload state survives a rescan.
+    pub fn rescan(&mut self) {
+        let mut fresh = HashMap::new();
+        if self.root.exists() {
+            walk_tree(&self.root, &self.root, &mut fresh);
+        }
+        // Only *add*: existing entries (and their versions) are preserved.
+        for (k, v) in &fresh {
+            self.index.entry(k.clone()).or_insert(v.clone());
+        }
+        // Removed files drop out of the index (derived "#N" entries are
+        // dropped with their base).
+        let removed: Vec<String> = self
+            .index
+            .keys()
+            .filter(|k| {
+                let base = k.split('#').next().unwrap_or(k).to_string();
+                !fresh.contains_key(&base)
+            })
+            .cloned()
+            .collect();
+        for k in removed {
+            self.index.remove(&k);
+        }
+    }
+
     /// Resolve an asset path to a filesystem location (`#sub` refs strip).
     pub fn fs_path(&self, asset: &str) -> PathBuf {
         let base = asset.split('#').next().unwrap_or(asset);
@@ -564,6 +592,31 @@ mod tests {
             assert!(!i.is_empty());
         }
         assert!(builtin_mesh("nope").is_none());
+    }
+
+    #[test]
+    fn rescan_picks_up_new_files() {
+        let dir = std::env::temp_dir().join(format!("spark_rescan_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("assets")).unwrap();
+        std::fs::write(dir.join("assets/a.png"), b"png").unwrap();
+        let mut assets = Assets::new(&dir);
+        assert_eq!(assets.list(AssetKind::Texture).len(), 1);
+        // A file created *after* Assets::new appears after rescan()…
+        std::fs::write(dir.join("assets/b.png"), b"png").unwrap();
+        assert_eq!(assets.list(AssetKind::Texture).len(), 1, "not indexed yet");
+        assets.rescan();
+        assert_eq!(
+            assets.list(AssetKind::Texture).len(),
+            2,
+            "rescan indexes it"
+        );
+        // …and a deleted file disappears.
+        std::fs::remove_file(dir.join("assets/a.png")).unwrap();
+        assets.rescan();
+        let list = assets.list(AssetKind::Texture);
+        assert_eq!(list, vec!["assets/b.png".to_string()]);
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

@@ -215,6 +215,13 @@ impl<'window> Engine<'window> {
             .iter()
             .map(|(e, r)| (e, r.rules.clone()))
             .collect();
+        // Entities whose rules have never run fire `Start` this pass —
+        // whether they came from a scene load or were spawned directly.
+        for (e, _) in &entities {
+            if self.rules.first_seen(*e) {
+                self.rules.mark_fresh(*e);
+            }
+        }
 
         for (e, rules) in entities {
             if destroy_queue.contains(&e) {
@@ -247,6 +254,8 @@ impl<'window> Engine<'window> {
             );
         }
 
+        // `Start` fired during this pass; don't repeat it next tick.
+        self.rules.drain_fresh();
         self.rules.camera_follow = camera_follow;
         if let Some(path) = load_scene {
             let _ = self.load_scene(&path);

@@ -296,11 +296,13 @@ impl Default for Light {
 // Physics
 // ---------------------------------------------------------------------------
 
-/// Rigid body motion type.
+/// Rigid body motion type. Defaults to Dynamic — adding a `RigidBody`
+/// component makes the entity move (an entity that shouldn't move says
+/// `Static` explicitly; the old silent `Static` default was an API trap).
 #[derive(ComponentDef, Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum BodyKind {
-    #[default]
     Static,
+    #[default]
     Dynamic,
     Kinematic,
 }

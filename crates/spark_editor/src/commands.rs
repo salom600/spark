@@ -332,6 +332,73 @@ impl Editor {
         self.log("info", "added Ground (static collider, surface at y=0)");
     }
 
+    /// Spawn an entity from a dragged asset (viewport drop): textures become
+    /// Sprites, models become MeshRenderers, sounds become Music emitters.
+    /// Undoable, placed at the drop position in 2D scenes.
+    pub fn spawn_asset_entity(&mut self, path: &str, at: Option<Vec3>) {
+        let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
+        let position = at.unwrap_or_default();
+        let bundle: Vec<(&'static str, String)> = match ext.as_str() {
+            "png" | "jpg" | "jpeg" | "bmp" | "webp" | "tga" => {
+                vec![(
+                    "Sprite",
+                    ron::to_string(&Sprite {
+                        image: path.to_string(),
+                        ..Default::default()
+                    })
+                    .unwrap_or_default(),
+                )]
+            }
+            "glb" | "gltf" => {
+                // First primitive of the model; assign textures separately.
+                vec![(
+                    "MeshRenderer",
+                    ron::to_string(&MeshRenderer {
+                        mesh: format!("{path}#0"),
+                        ..Default::default()
+                    })
+                    .unwrap_or_default(),
+                )]
+            }
+            "wav" | "ogg" | "mp3" | "flac" => {
+                vec![(
+                    "Music",
+                    ron::to_string(&Music {
+                        track: path.to_string(),
+                        ..Default::default()
+                    })
+                    .unwrap_or_default(),
+                )]
+            }
+            _ => {
+                self.log("warn", &format!("drop: unsupported asset {path}"));
+                return;
+            }
+        };
+        let name = path.rsplit('/').next().unwrap_or("Asset").to_string();
+        let world = &mut self.engine.scene.world;
+        let e = world.spawn((
+            ecs::Name(name),
+            Transform {
+                position,
+                ..Default::default()
+            },
+        ));
+        for (comp, text) in &bundle {
+            if let Some(entry) = self.engine.registry.get(comp) {
+                let _ = (entry.load)(world, e, text);
+            }
+        }
+        let record = self.engine.scene.record_of(e, &self.engine.registry);
+        self.push_prepared_command(Box::new(CreateEntitiesCommand {
+            label: "Drop Asset".into(),
+            records: vec![record],
+            entities: vec![Some(e)],
+        }));
+        self.state.select(e);
+        self.log("info", &format!("spawned entity from {path}"));
+    }
+
     pub fn add_camera(&mut self) {
         let persp = matches!(self.engine.scene.dimension, spark::scene::Dimension::D3);
         let cam = if persp {

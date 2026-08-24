@@ -48,6 +48,10 @@ pub struct Editor {
     pub playing: Option<PlaySnapshot>,
     pub console: Vec<(String, String)>,
     pub selected_asset: Option<String>,
+    /// Texture thumbnails for the asset browser, cached by (path, version).
+    pub tex_previews: std::collections::HashMap<String, (u32, egui::TextureHandle)>,
+    /// Asset being dragged from the browser (for viewport drop-to-spawn).
+    pub drag_asset: Option<String>,
 }
 
 impl Editor {
@@ -74,6 +78,8 @@ impl Editor {
                 "spark editor ready — File → New/Open Project".into(),
             )],
             selected_asset: None,
+            tex_previews: std::collections::HashMap::new(),
+            drag_asset: None,
         })
     }
 
@@ -92,6 +98,8 @@ impl Editor {
             playing: None,
             console: Vec::new(),
             selected_asset: None,
+            tex_previews: std::collections::HashMap::new(),
+            drag_asset: None,
         }
     }
 
@@ -146,6 +154,39 @@ impl Editor {
             Err(e) => self.log("error", &format!("create failed: {e}")),
         }
         self.open_project(&dir);
+    }
+
+    /// Copy a file into the project's assets/ and index it immediately.
+    /// The practical import path (no native dialog dependency); works on
+    /// every platform CI covers.
+    pub fn import_asset(&mut self, src: &str) {
+        let Some(dir) = self.project_dir.clone() else {
+            self.log("warn", "open a project before importing");
+            return;
+        };
+        let src_path = std::path::PathBuf::from(src);
+        let Some(name) = src_path.file_name().and_then(|n| n.to_str()) else {
+            self.log("error", "import: no file name");
+            return;
+        };
+        if !src_path.is_file() {
+            self.log("error", &format!("import: {src} is not a file"));
+            return;
+        }
+        let dst = dir.join("assets").join(name);
+        if let Some(parent) = dst.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        match std::fs::copy(&src_path, &dst) {
+            Ok(bytes) => {
+                self.engine.assets.rescan();
+                self.log(
+                    "info",
+                    &format!("imported {name} ({bytes} bytes) into assets/"),
+                );
+            }
+            Err(e) => self.log("error", &format!("import failed: {e}")),
+        }
     }
 
     pub fn open_project(&mut self, dir: &std::path::Path) {
@@ -479,6 +520,10 @@ impl Editor {
                     ui.separator();
                     if ui.button("Save Scene (Ctrl+S)").clicked() {
                         self.save_scene();
+                        ui.close();
+                    }
+                    if ui.button("Import Asset…").clicked() {
+                        self.state.show_import = true;
                         ui.close();
                     }
                     if ui.button("Reload Scene").clicked() {

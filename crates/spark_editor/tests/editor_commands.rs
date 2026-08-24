@@ -342,3 +342,80 @@ fn scene_save_load_roundtrip_after_edits() {
     assert_eq!(t.scale, Vec3::new(2.0, 2.0, 2.0));
     assert_eq!(loaded.dimension, Dimension::D3);
 }
+
+/// Drag-and-drop asset spawning: a texture path becomes a real Sprite
+/// entity (undoable), a model path becomes a MeshRenderer.
+#[test]
+fn drop_asset_spawns_component_backed_entity() {
+    let mut ed = Editor::headless();
+    ed.spawn_asset_entity("assets/player.png", Some(Vec3::new(2.0, 1.0, 0.0)));
+    let e = ed.state.primary().unwrap();
+    let sprite_image = ed
+        .engine
+        .scene
+        .world
+        .get::<&Sprite>(e)
+        .map(|sp| sp.image.clone())
+        .unwrap();
+    assert_eq!(sprite_image, "assets/player.png");
+    let t = ed
+        .engine
+        .scene
+        .world
+        .get::<&Transform>(e)
+        .map(|t| t.position)
+        .unwrap();
+    assert_eq!(t, Vec3::new(2.0, 1.0, 0.0));
+
+    ed.spawn_asset_entity("assets/robot.glb", None);
+    let m = ed.state.primary().unwrap();
+    let mesh_name = ed
+        .engine
+        .scene
+        .world
+        .get::<&MeshRenderer>(m)
+        .map(|mr| mr.mesh.clone())
+        .unwrap();
+    assert_eq!(mesh_name, "assets/robot.glb#0");
+
+    // Unsupported kinds refuse to spawn.
+    let before = ed.engine.scene.world.iter().count();
+    ed.spawn_asset_entity("assets/notes.txt", None);
+    assert_eq!(ed.engine.scene.world.iter().count(), before);
+
+    // The texture spawn is undoable.
+    ed.state.select(e);
+    ed.apply_undo();
+    assert_eq!(
+        ed.engine.scene.world.iter().count(),
+        1,
+        "only the mesh entity remains"
+    );
+}
+
+/// Import copies a real file into assets/ and rescan indexes it.
+#[test]
+fn import_asset_copies_and_indexes() {
+    let dir = std::env::temp_dir().join(format!("spark_import_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    Project::create_from_template(&dir, "ImportTest", Dimension::D2).unwrap();
+    // A source file outside the project.
+    let src = dir.join("source.png");
+    std::fs::write(&src, b"not-really-png").unwrap();
+
+    let mut ed = Editor::headless();
+    ed.open_project(&dir);
+    ed.import_asset(src.to_str().unwrap());
+    assert!(
+        dir.join("assets/source.png").is_file(),
+        "the file must be copied into assets/"
+    );
+    assert!(
+        ed.engine
+            .assets
+            .list(AssetKind::Texture)
+            .contains(&"assets/source.png".to_string()),
+        "rescan must index the imported file"
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}
