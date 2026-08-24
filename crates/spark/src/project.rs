@@ -59,20 +59,39 @@ impl Project {
             input: HashMap::new(),
         };
         project.save_dir(&dir)?;
-        // Blank scene: a camera + a light, ready to edit.
-        let scene = crate::scene::Scene {
+        // Blank scene: a camera + a light, ready to edit. 3D projects get a
+        // perspective camera placed to see the origin; 2D projects get the
+        // default orthographic camera.
+        let mut scene = crate::scene::Scene {
             dimension,
             name: "Main".into(),
             ..Default::default()
         };
-        let mut scene = scene;
         let registry = crate::scene::default_registry();
         let _ = &registry;
-        scene.world.spawn((
-            crate::ecs::Name("Camera".into()),
-            crate::components::Transform::default(),
-            crate::components::Camera::default(),
-        ));
+        match dimension {
+            Dimension::D3 => {
+                scene.world.spawn((
+                    crate::ecs::Name("Camera".into()),
+                    crate::components::Transform {
+                        position: crate::math::Vec3::new(0.0, 2.5, 9.0),
+                        rotation: crate::math::Vec3::new(-14.0, 0.0, 0.0),
+                        ..Default::default()
+                    },
+                    crate::components::Camera {
+                        kind: crate::components::CameraKind::Perspective { fov_deg: 60.0 },
+                        ..Default::default()
+                    },
+                ));
+            }
+            Dimension::D2 => {
+                scene.world.spawn((
+                    crate::ecs::Name("Camera".into()),
+                    crate::components::Transform::default(),
+                    crate::components::Camera::default(),
+                ));
+            }
+        }
         scene.world.spawn((
             crate::ecs::Name("Sun".into()),
             crate::components::Transform::default(),
@@ -136,5 +155,32 @@ mod tests {
         let scene = crate::scene::load_scene_file(&scene_path, &registry).unwrap();
         assert!(crate::ecs::find_by_name(&scene.world, "Camera").is_some());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A 3D project's gameplay camera must be perspective (it renders in
+    /// Play mode); a 2D project's must be orthographic.
+    #[test]
+    fn template_camera_matches_dimension() {
+        for (dim, perspective) in [(Dimension::D3, true), (Dimension::D2, false)] {
+            let dir = std::env::temp_dir().join(format!(
+                "spark_proj_cam_{}_{:?}",
+                std::process::id(),
+                dim
+            ));
+            let _ = std::fs::remove_dir_all(&dir);
+            Project::create_from_template(&dir, "Cam", dim).unwrap();
+            let registry = crate::scene::default_registry();
+            let scene =
+                crate::scene::load_scene_file(&dir.join("scenes/main.scene"), &registry).unwrap();
+            let cam = crate::ecs::find_by_name(&scene.world, "Camera").unwrap();
+            let kind = scene
+                .world
+                .get::<&crate::components::Camera>(cam)
+                .unwrap()
+                .kind;
+            let is_persp = matches!(kind, crate::components::CameraKind::Perspective { .. });
+            assert_eq!(is_persp, perspective, "{dim:?} camera mismatch: {kind:?}");
+            std::fs::remove_dir_all(&dir).ok();
+        }
     }
 }

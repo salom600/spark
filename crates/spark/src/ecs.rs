@@ -355,6 +355,88 @@ pub fn roots(world: &World) -> Vec<Entity> {
     all
 }
 
+// ---------------------------------------------------------------------------
+// World transforms (parent chain composition)
+// ---------------------------------------------------------------------------
+
+/// Compose a child's local transform onto a parent's transform (SRT order:
+/// `world = T_p · R_p · S_p · T_c · R_c · S_c`).
+pub fn compose_transforms(
+    parent: &crate::components::Transform,
+    child: &crate::components::Transform,
+) -> crate::components::Transform {
+    use crate::components::Transform;
+    let rot = parent.quat() * child.quat();
+    let scale = Vec3::new(
+        parent.scale.x * child.scale.x,
+        parent.scale.y * child.scale.y,
+        parent.scale.z * child.scale.z,
+    );
+    let position = parent.quat() * (child.position * parent.scale) + parent.position;
+    let e = rot.to_euler(glam::EulerRot::XYZ);
+    Transform {
+        position,
+        rotation: Vec3::new(e.0.to_degrees(), e.1.to_degrees(), e.2.to_degrees()),
+        scale,
+    }
+}
+
+/// The entity's transform in world space (local transforms composed up the
+/// `Parent` chain). Rendering, physics and picking all use this so children
+/// actually follow their parents.
+pub fn world_transform(world: &World, e: Entity) -> crate::components::Transform {
+    use crate::components::Transform;
+    let local = world.get::<&Transform>(e).map(|t| *t).unwrap_or_default();
+    let parent = world.get::<&Parent>(e).ok().map(|p| p.0);
+    match parent {
+        Some(p) => compose_transforms(&world_transform(world, p), &local),
+        None => local,
+    }
+}
+
+/// Inverse of [`compose_transforms`]: the local transform that makes `world_t`
+/// true under `parent`. Degenerate (zero) parent scales pass the world value
+/// through untouched instead of dividing by zero.
+fn decompose_transforms(
+    parent: &crate::components::Transform,
+    world_t: &crate::components::Transform,
+) -> crate::components::Transform {
+    use crate::components::Transform;
+    let inv_q = parent.quat().conjugate();
+    let rel = inv_q * (world_t.position - parent.position);
+    let div = |a: f32, b: f32| if b.abs() < 1e-8 { a } else { a / b };
+    let position = Vec3::new(
+        div(rel.x, parent.scale.x),
+        div(rel.y, parent.scale.y),
+        div(rel.z, parent.scale.z),
+    );
+    let scale = Vec3::new(
+        div(world_t.scale.x, parent.scale.x),
+        div(world_t.scale.y, parent.scale.y),
+        div(world_t.scale.z, parent.scale.z),
+    );
+    let e = (inv_q * world_t.quat()).to_euler(glam::EulerRot::XYZ);
+    Transform {
+        position,
+        rotation: Vec3::new(e.0.to_degrees(), e.1.to_degrees(), e.2.to_degrees()),
+        scale,
+    }
+}
+
+/// Set an entity's *world* transform: decomposes into local space under the
+/// current parent chain and writes the local `Transform`.
+pub fn set_world_transform(world: &mut World, e: Entity, world_t: crate::components::Transform) {
+    let parent = world.get::<&Parent>(e).ok().map(|p| p.0);
+    let local = match parent {
+        Some(p) => {
+            let pw = world_transform(world, p);
+            decompose_transforms(&pw, &world_t)
+        }
+        None => world_t,
+    };
+    world.insert_one(e, local).ok();
+}
+
 /// Human label for an entity used by the editor tree.
 pub fn entity_label(world: &World, e: Entity) -> String {
     world
@@ -396,5 +478,83 @@ mod tests {
         assert!((entry.has)(&w, e2));
         (entry.remove)(&mut w, e);
         assert!(!(entry.has)(&w, e));
+    }
+
+    #[test]
+    fn world_transform_composes_chain() {
+        use crate::components::Transform;
+        let mut w = World::default();
+        let a = w.spawn((
+            Name("a".into()),
+            Transform {
+                position: Vec3::new(10.0, 0.0, 0.0),
+                rotation: Vec3::new(0.0, 90.0, 0.0), // yaw 90°: +X → -Z
+                scale: Vec3::new(2.0, 2.0, 2.0),
+            },
+        ));
+        let b = w.spawn((
+            Name("b".into()),
+            Transform {
+                position: Vec3::new(1.0, 0.0, 0.0),
+                ..Default::default()
+            },
+        ));
+        set_parent(&mut w, b, Some(a));
+        let wt = world_transform(&w, b);
+        // Parent yaw 90° maps local +X to world -Z, scaled by 2, plus +10 X.
+        assert!((wt.position.x - 10.0).abs() < 1e-4, "x = {}", wt.position.x);
+        assert!((wt.position.z + 2.0).abs() < 1e-4, "z = {}", wt.position.z);
+        assert!((wt.position.y).abs() < 1e-4);
+        assert_eq!(wt.scale, Vec3::new(2.0, 2.0, 2.0));
+
+        // set_world_transform on the child decomposes back correctly.
+        set_world_transform(
+            &mut w,
+            b,
+            Transform {
+                position: Vec3::new(10.0, 5.0, 0.0),
+                ..Default::default()
+            },
+        );
+        let wt = world_transform(&w, b);
+        assert!((wt.position.x - 10.0).abs() < 1e-4);
+        assert!((wt.position.y - 5.0).abs() < 1e-4);
+        assert!((wt.position.z).abs() < 1e-4);
+    }
+
+    #[test]
+    fn world_transform_deep_chain_and_rotation() {
+        use crate::components::Transform;
+        let mut w = World::default();
+        let a = w.spawn((
+            Name("a".into()),
+            Transform {
+                position: Vec3::new(0.0, 0.0, 0.0),
+                rotation: Vec3::new(0.0, 0.0, 90.0), // roll 90°: +X → +Y
+                ..Default::default()
+            },
+        ));
+        let b = w.spawn((
+            Name("b".into()),
+            Transform {
+                position: Vec3::new(1.0, 0.0, 0.0),
+                ..Default::default()
+            },
+        ));
+        let c = w.spawn((
+            Name("c".into()),
+            Transform {
+                position: Vec3::new(1.0, 0.0, 0.0),
+                ..Default::default()
+            },
+        ));
+        set_parent(&mut w, b, Some(a));
+        set_parent(&mut w, c, Some(b));
+        let wt = world_transform(&w, c);
+        // a's roll maps b's local +X to world +Y; c's local +X then adds
+        // another world +Y (b's world rotation is also 90° roll).
+        assert!((wt.position.y - 2.0).abs() < 1e-4, "y = {}", wt.position.y);
+        assert!((wt.position.x).abs() < 1e-4);
+        assert!((wt.position.z).abs() < 1e-4);
     }
 }

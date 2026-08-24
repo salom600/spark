@@ -344,6 +344,8 @@ impl Physics {
     fn push_transforms(&mut self, world: &World) {
         // Static and kinematic bodies follow their Transform (editor moves).
         // Dynamic bodies are only repositioned via `teleport`.
+        // Parent chains are composed: a body on a child entity lives at its
+        // *world* transform.
         if self.dimension == Dimension::D2 {
             for (e, bh) in self.map2.clone() {
                 let Ok(rb) = world.get::<&RigidBody>(e) else {
@@ -352,9 +354,7 @@ impl Physics {
                 if rb.kind == BodyKind::Dynamic {
                     continue;
                 }
-                let Ok(t) = world.get::<&Transform>(e) else {
-                    continue;
-                };
+                let t = crate::ecs::world_transform(world, e);
                 if let Some(b) = self.p2.bodies.get_mut(bh) {
                     b.set_translation(r2::Vector::new(t.position.x, t.position.y), false);
                     b.set_rotation(
@@ -371,9 +371,7 @@ impl Physics {
                 if rb.kind == BodyKind::Dynamic {
                     continue;
                 }
-                let Ok(t) = world.get::<&Transform>(e) else {
-                    continue;
-                };
+                let t = crate::ecs::world_transform(world, e);
                 let quat = t.quat();
                 if let Some(b) = self.p3.bodies.get_mut(bh) {
                     b.set_translation(
@@ -459,6 +457,9 @@ impl Physics {
     }
 
     fn pull_transforms(&mut self, world: &mut World) {
+        // Dynamic bodies drive their entity's *world* transform;
+        // `set_world_transform` decomposes it into local space under any
+        // parent chain.
         if self.dimension == Dimension::D2 {
             for (e, bh) in self.map2.clone() {
                 let Some(b) = self.p2.bodies.get(bh) else {
@@ -479,13 +480,33 @@ impl Physics {
                 };
                 let pos = b.translation();
                 let q = b.rotation().quaternion();
-                if let Ok(mut t) = world.get::<&mut Transform>(e) {
-                    t.position.x = pos.x;
-                    t.position.y = pos.y;
-                    t.position.z = pos.z;
-                    let eu =
-                        glam::Quat::from_xyzw(q.i, q.j, q.k, q.w).to_euler(glam::EulerRot::XYZ);
-                    t.rotation = Vec3::new(eu.0.to_degrees(), eu.1.to_degrees(), eu.2.to_degrees());
+                let has_parent = world.get::<&crate::ecs::Parent>(e).is_ok();
+                if !has_parent {
+                    if let Ok(mut t) = world.get::<&mut Transform>(e) {
+                        t.position.x = pos.x;
+                        t.position.y = pos.y;
+                        t.position.z = pos.z;
+                        let eu =
+                            glam::Quat::from_xyzw(q.i, q.j, q.k, q.w).to_euler(glam::EulerRot::XYZ);
+                        t.rotation =
+                            Vec3::new(eu.0.to_degrees(), eu.1.to_degrees(), eu.2.to_degrees());
+                    }
+                } else {
+                    let quat = glam::Quat::from_xyzw(q.i, q.j, q.k, q.w);
+                    let eu = quat.to_euler(glam::EulerRot::XYZ);
+                    crate::ecs::set_world_transform(
+                        world,
+                        e,
+                        Transform {
+                            position: Vec3::new(pos.x, pos.y, pos.z),
+                            rotation: Vec3::new(
+                                eu.0.to_degrees(),
+                                eu.1.to_degrees(),
+                                eu.2.to_degrees(),
+                            ),
+                            ..world.get::<&Transform>(e).map(|t| *t).unwrap_or_default()
+                        },
+                    );
                 }
             }
         }

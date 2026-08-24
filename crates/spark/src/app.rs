@@ -23,7 +23,7 @@ use crate::physics::Physics;
 use crate::project::Project;
 use crate::render::{FrameDraw, Renderer, build_frame_draw};
 use crate::rules::{ActionCtx, RuleRuntime, run_rules, set_partner};
-use crate::scene::{Scene, default_registry, load_scene_file};
+use crate::scene::{Dimension, Scene, default_registry, load_scene_file};
 
 /// Game HUD hook: receives the egui context and engine each frame.
 pub type HudFn = Box<dyn FnMut(&egui::Context, &Engine) + Send>;
@@ -41,6 +41,9 @@ pub struct Engine<'window> {
     pub frame: u64,
     /// Size of the active viewport in physical pixels (for mouse→world).
     pub viewport_px: Vec2,
+    /// Top-left of the active viewport in physical pixels. The editor's
+    /// viewport is a sub-rect of the window; standalone games use (0, 0).
+    pub viewport_origin_px: Vec2,
     pub hud: Option<HudFn>,
     /// Track currently playing (music autoplay bookkeeping).
     pub playing_track: Option<String>,
@@ -109,6 +112,7 @@ impl<'window> Engine<'window> {
             project: project.clone(),
             frame: 0,
             viewport_px: Vec2::new(1280.0, 720.0),
+            viewport_origin_px: Vec2::ZERO,
             hud: None,
             playing_track: None,
             last_instant: Instant::now(),
@@ -272,15 +276,33 @@ impl<'window> Engine<'window> {
         self.input.end_frame();
     }
 
+    /// Switch the scene's dimension (2D ↔ 3D) and rebuild the physics
+    /// backend for it. Scene data is preserved.
+    pub fn set_dimension(&mut self, d: Dimension) {
+        self.scene.dimension = d;
+        self.physics.set_dimension(d);
+        if let Some(p) = self.project.as_mut() {
+            p.dimension = d;
+        }
+    }
+
     /// Mouse position mapped to world space (orthographic cameras only).
+    /// Accounts for the viewport's origin within the window (the editor's
+    /// viewport sits between panels).
     pub fn mouse_world(&self) -> Option<Vec2> {
         let (cam, cam_tr) = self.primary_camera()?;
         let vp = self.viewport_px;
+        let origin = self.viewport_origin_px;
         if vp.x <= 0.0 || vp.y <= 0.0 {
             return None;
         }
-        let ndc_x = (self.input.mouse_pos.x / vp.x) * 2.0 - 1.0;
-        let ndc_y = 1.0 - (self.input.mouse_pos.y / vp.y) * 2.0;
+        let rel = self.input.mouse_pos - origin;
+        let ndc_x = (rel.x / vp.x) * 2.0 - 1.0;
+        let ndc_y = 1.0 - (rel.y / vp.y) * 2.0;
+        // Guard: pointer outside the viewport → no world position.
+        if ndc_x < -1.02 || ndc_x > 1.02 || ndc_y < -1.02 || ndc_y > 1.02 {
+            return None;
+        }
         match &cam.kind {
             crate::components::CameraKind::Ortho2D { height } => {
                 let w = height * (vp.x / vp.y);
@@ -299,7 +321,7 @@ impl<'window> Engine<'window> {
             .query::<(&Camera, &Transform)>()
             .iter()
             .next()
-            .map(|(_, (c, t))| (*c, *t))
+            .map(|(e, (c, _))| (*c, crate::ecs::world_transform(&self.scene.world, e)))
     }
 
     fn camera_follow(&mut self, dt: f32) {
@@ -317,7 +339,8 @@ impl<'window> Engine<'window> {
         let Ok(t_tr) = self.scene.world.get::<&Transform>(target) else {
             return;
         };
-        let t_pos = t_tr.position;
+        let t_pos = crate::ecs::world_transform(&self.scene.world, target).position;
+        drop(t_tr);
         let k = 1.0 - (1.0 - lerp.clamp(0.0, 1.0)).powf((dt * 60.0).max(0.0));
         if let Ok(mut t) = self.scene.world.get::<&mut Transform>(cam_e) {
             t.position = t

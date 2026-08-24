@@ -48,6 +48,17 @@ impl CommandStack {
         }
     }
 
+    /// Push a command that has *already* been applied to the world (e.g. an
+    /// interactive gizmo drag that mutated the transform directly, or an
+    /// eagerly-spawned entity). Undo/redo work exactly as with [`push`].
+    pub fn push_prepared(&mut self, cmd: Box<dyn Command>) {
+        self.undo.push(cmd);
+        self.redo.clear();
+        if self.undo.len() > self.limit {
+            self.undo.remove(0);
+        }
+    }
+
     pub fn undo(&mut self, ctx: &mut CommandCtx) -> Option<String> {
         let mut cmd = self.undo.pop()?;
         let label = cmd.label();

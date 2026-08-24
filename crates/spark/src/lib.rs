@@ -50,7 +50,7 @@ pub mod prelude {
     pub use crate::components::*;
     pub use crate::ecs::{self, ComponentDef, Registry};
     pub use crate::input::{Binding, Input};
-    pub use crate::math::{Color, Mat4, Quat, Vec2, Vec3, Vec4};
+    pub use crate::math::{Color, EulerRot, Mat4, Quat, Vec2, Vec3, Vec4};
     pub use crate::physics::Physics;
     pub use crate::project::Project;
     pub use crate::rules::{Action, Cond, Rule, RuleEvent, RuleRuntime, VarScope};

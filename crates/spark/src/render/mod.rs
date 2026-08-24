@@ -97,11 +97,13 @@ pub fn build_frame_draw(
     let world = &scene.world;
 
     // Camera: explicit override or first entity with a Camera component.
+    // The camera's own parent chain is honored (a camera parented to a
+    // moving entity looks from its world position).
     let (cam, cam_tr) = if let Some((tr, c)) = camera_override {
         (c, tr)
     } else {
         match world.query::<(&Camera, &Transform)>().iter().next() {
-            Some((_, (c, t))) => (*c, *t),
+            Some((e, (c, _))) => (*c, crate::ecs::world_transform(world, e)),
             None => return default_draw(scene),
         }
     };
@@ -192,11 +194,13 @@ pub fn build_frame_draw(
         ..Default::default()
     };
 
-    // Sprites (visible, with Sprite component).
-    for (e, (sp, t)) in world.query::<(&Sprite, &Transform)>().iter() {
+    // Sprites (visible, with Sprite component). World transform so
+    // parented sprites follow their chain.
+    for (e, (sp, _)) in world.query::<(&Sprite, &Transform)>().iter() {
         if !visible(world, e) {
             continue;
         }
+        let t = crate::ecs::world_transform(world, e);
         let instance = SpriteInstance {
             pos: [t.position.x, t.position.y, t.position.z],
             rot: t.rotation.z.to_radians(),
@@ -209,11 +213,13 @@ pub fn build_frame_draw(
         }
     }
 
-    // Meshes (visible, with MeshRenderer component).
-    for (e, (mr, t)) in world.query::<(&MeshRenderer, &Transform)>().iter() {
+    // Meshes (visible, with MeshRenderer component). World transform so
+    // parented meshes follow their chain.
+    for (e, (mr, _)) in world.query::<(&MeshRenderer, &Transform)>().iter() {
         if !visible(world, e) {
             continue;
         }
+        let t = crate::ecs::world_transform(world, e);
         let model = Mat4::from_scale_rotation_translation(t.scale, t.quat(), t.position);
         let instance = MeshInstance {
             model: model.to_cols_array_2d(),

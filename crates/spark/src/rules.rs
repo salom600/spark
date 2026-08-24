@@ -490,12 +490,15 @@ fn partner_of(collisions: &[CollisionPair], entity: Entity) -> Option<Entity> {
 }
 
 fn clicked_entity(world: &World, entity: Entity, mouse: crate::math::Vec2) -> bool {
-    let (Ok(tr), Ok(sp)) = (
+    let (Ok(_), Ok(sp)) = (
         world.get::<&crate::components::Transform>(entity),
         world.get::<&crate::components::Sprite>(entity),
     ) else {
         return false;
     };
+    // World transform: a sprite parented under something is hit where it
+    // is *drawn*, not at its local offset.
+    let tr = crate::ecs::world_transform(world, entity);
     let half = sp.size * tr.scale.truncate() * 0.5;
     let p = tr.position;
     mouse.x >= p.x - half.x

@@ -130,7 +130,10 @@ impl Scene {
             .collect()
     }
 
-    fn record_of(&self, e: hecs::Entity, registry: &Registry) -> EntityRecord {
+    /// Snapshot one entity (with its whole subtree) as a spawnable record.
+    /// The editor uses this for duplicate/delete-undo; the recursive
+    /// `children` field is what preserves hierarchy through a respawn.
+    pub fn record_of(&self, e: hecs::Entity, registry: &Registry) -> EntityRecord {
         let world = &self.world;
         let transform = world.get::<&Transform>(e).ok().map(|t| *t);
         let mut components = Vec::new();

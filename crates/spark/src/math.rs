@@ -2,7 +2,7 @@
 //! adds the engine's [`Color`] and re-exports the common glam types so game
 //! code never needs a direct glam dependency.
 
-pub use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
+pub use glam::{EulerRot, Mat4, Quat, Vec2, Vec3, Vec4};
 
 use serde::{Deserialize, Serialize};
 
