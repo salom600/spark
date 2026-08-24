@@ -343,6 +343,8 @@ pub struct EditorState {
     pub hovered: Option<crate::gizmo::GizmoHit>,
     /// Hierarchy rows the user expanded.
     pub tree_open: std::collections::HashSet<hecs::Entity>,
+    /// Hide the editor panels while playing (game view fills the window).
+    pub maximize_on_play: bool,
     /// Hierarchy row being inline-renamed.
     pub renaming: Option<hecs::Entity>,
     /// Hierarchy drag & drop source (reparenting).
@@ -365,6 +367,7 @@ impl Default for EditorState {
             drag: None,
             hovered: None,
             tree_open: std::collections::HashSet::new(),
+            maximize_on_play: true,
             renaming: None,
             hierarchy_drag: None,
         }

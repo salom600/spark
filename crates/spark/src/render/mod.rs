@@ -48,8 +48,14 @@ pub struct Globals {
     pub light_view_proj: [[f32; 4]; 4],
     pub dir_light: [f32; 4],       // xyz direction, w = light present flag
     pub dir_light_color: [f32; 4], // rgb * intensity, a = ambient
-    pub light_meta: [f32; 4],      // point count, shadow bias, unused, unused
+    pub light_meta: [f32; 4],      // point count, shadow bias, spot present, unused
     pub point_lights: [[f32; 8]; MAX_POINT_LIGHTS], // pos.xyz, range, color.rgb * intensity, pad
+    /// xyz = spot position, w = range. Inactive when `light_meta.z < 0.5`.
+    pub spot_pos: [f32; 4],
+    /// xyz = spot direction (normalized), w = cos(outer half angle).
+    pub spot_dir: [f32; 4],
+    /// rgb = color * intensity, a = cos(inner half angle).
+    pub spot_color: [f32; 4],
 }
 
 #[repr(C)]
@@ -96,14 +102,23 @@ pub fn build_frame_draw(
 ) -> FrameDraw {
     let world = &scene.world;
 
-    // Camera: explicit override or first entity with a Camera component.
+    // Camera: explicit override or the first *active* camera entity.
     // The camera's own parent chain is honored (a camera parented to a
     // moving entity looks from its world position).
     let (cam, cam_tr) = if let Some((tr, c)) = camera_override {
         (c, tr)
     } else {
-        match world.query::<(&Camera, &Transform)>().iter().next() {
-            Some((e, (c, _))) => (*c, crate::ecs::world_transform(world, e)),
+        let mut q = world.query::<(&Camera, &Transform)>();
+        let mut found = q.iter().find(|(_, (c, _))| c.active);
+        if found.is_none() {
+            found = q.iter().next();
+        }
+        match found {
+            Some((e, (c, _))) => {
+                let cam = *c;
+                let cam_tr = crate::ecs::world_transform(world, e);
+                (cam, cam_tr)
+            }
             None => return default_draw(scene),
         }
     };
@@ -126,8 +141,11 @@ pub fn build_frame_draw(
 
     // Lights.
     let mut dir: Option<([f32; 4], [f32; 4])> = None;
+    // (pos, dir, range, cos_outer, cos_inner, color·intensity)
+    let mut spot: Option<(Vec3, Vec3, f32, f32, f32, [f32; 3])> = None;
     let mut points: Vec<[f32; 8]> = Vec::new();
-    for (_e, (l, t)) in world.query::<(&Light, &Transform)>().iter() {
+    for (e, (l, _t)) in world.query::<(&Light, &Transform)>().iter() {
+        let pos = crate::ecs::world_transform(world, e).position;
         match &l.kind {
             LightKind::Directional { direction } => {
                 if dir.is_none() {
@@ -146,15 +164,37 @@ pub fn build_frame_draw(
             LightKind::Point { range } => {
                 if points.len() < MAX_POINT_LIGHTS {
                     points.push([
-                        t.position.x,
-                        t.position.y,
-                        t.position.z,
+                        pos.x,
+                        pos.y,
+                        pos.z,
                         *range,
                         l.color.r * l.intensity,
                         l.color.g * l.intensity,
                         l.color.b * l.intensity,
                         0.0,
                     ]);
+                }
+            }
+            LightKind::Spot {
+                direction,
+                angle_deg,
+                range,
+            } => {
+                if spot.is_none() {
+                    let outer = angle_deg.clamp(1.0, 89.0) * 0.5;
+                    let inner = outer * 0.6;
+                    spot = Some((
+                        pos,
+                        direction.normalize_or_zero(),
+                        range.max(0.001),
+                        outer.to_radians().cos(),
+                        inner.to_radians().cos(),
+                        [
+                            l.color.r * l.intensity,
+                            l.color.g * l.intensity,
+                            l.color.b * l.intensity,
+                        ],
+                    ));
                 }
             }
         }
@@ -164,6 +204,7 @@ pub fn build_frame_draw(
     }
     let (dir_vec, dir_color) =
         dir.unwrap_or(([0.0, -1.0, 0.0, 0.0], [0.0, 0.0, 0.0, scene.ambient]));
+    let spot_present = spot.is_some();
 
     // Shadow view-projection: ortho box around the camera target (fixed
     // radius in v1 — documented in DECISIONS.md §6).
@@ -182,10 +223,23 @@ pub fn build_frame_draw(
         light_view_proj: shadow_vp.to_cols_array_2d(),
         dir_light: dir_vec,
         dir_light_color: dir_color,
-        light_meta: [points.len() as f32, 0.0015, 0.0, 0.0],
+        light_meta: [
+            points.len() as f32,
+            0.0015,
+            if spot_present { 1.0 } else { 0.0 },
+            0.0,
+        ],
         point_lights: points.try_into().unwrap(),
+        spot_pos: [0.0; 4],
+        spot_dir: [0.0; 4],
+        spot_color: [0.0; 4],
     };
     globals.dir_light[3] = if dir.is_some() { 1.0 } else { 0.0 };
+    if let Some((p, d, range, cos_outer, cos_inner, c)) = spot {
+        globals.spot_pos = [p.x, p.y, p.z, range];
+        globals.spot_dir = [d.x, d.y, d.z, cos_outer];
+        globals.spot_color = [c[0], c[1], c[2], cos_inner];
+    }
 
     let mut draw = FrameDraw {
         clear: cam.clear,

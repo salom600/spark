@@ -186,7 +186,9 @@ impl Default for CameraKind {
     }
 }
 
-/// Scene camera. The first entity with this component renders the frame.
+/// Scene camera. The first entity with an *active* `Camera` renders the
+/// frame (rules can switch cameras via `Action::UseCamera`);
+/// `active` defaults to true so single-camera scenes are unaffected.
 #[derive(ComponentDef, Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Camera {
     pub kind: CameraKind,
@@ -196,6 +198,12 @@ pub struct Camera {
     pub near: f32,
     #[serde(default = "default_far")]
     pub far: f32,
+    #[serde(default = "yes")]
+    pub active: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 fn default_near() -> f32 {
@@ -212,6 +220,7 @@ impl Default for Camera {
             clear: Color::default(),
             near: default_near(),
             far: default_far(),
+            active: yes(),
         }
     }
 }
@@ -220,11 +229,22 @@ impl Default for Camera {
 #[derive(ComponentDef, Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum LightKind {
     /// Sun-like directional light; `direction` points *from* light to scene.
+    /// One of these casts shadows.
     Directional {
         #[serde(default = "default_light_dir")]
         direction: Vec3,
     },
     Point {
+        #[serde(default = "default_point_range")]
+        range: f32,
+    },
+    /// Cone light: illuminates `direction` within `angle_deg` (full cone)
+    /// up to `range`. No shadow casting (v1 scope).
+    Spot {
+        #[serde(default = "default_light_dir")]
+        direction: Vec3,
+        #[serde(default = "default_spot_angle")]
+        angle_deg: f32,
         #[serde(default = "default_point_range")]
         range: f32,
     },
@@ -235,6 +255,9 @@ fn default_light_dir() -> Vec3 {
 }
 fn default_point_range() -> f32 {
     10.0
+}
+fn default_spot_angle() -> f32 {
+    45.0
 }
 
 impl Default for LightKind {

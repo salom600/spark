@@ -16,6 +16,15 @@ use spark::prelude::*;
 
 use state::{EditorCamera, EditorState, PlaySnapshot};
 
+/// Play-mode state machine: Stopped (editing) \u{2192} Playing \u{2194} Paused \u{2192} Stopped.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum PlayState {
+    #[default]
+    Stopped,
+    Playing,
+    Paused,
+}
+
 /// The editor application: engine + editor-only state.
 ///
 /// Layout (egui panels):
@@ -35,6 +44,7 @@ pub struct Editor {
     pub scene_path: String,
     pub undo: CommandStack,
     pub editor_cam: EditorCamera,
+    pub play_state: PlayState,
     pub playing: Option<PlaySnapshot>,
     pub console: Vec<(String, String)>,
     pub selected_asset: Option<String>,
@@ -57,6 +67,7 @@ impl Editor {
             scene_path: "scenes/main.scene".into(),
             undo: CommandStack::default(),
             editor_cam,
+            play_state: PlayState::Stopped,
             playing: None,
             console: vec![(
                 "info".into(),
@@ -77,6 +88,7 @@ impl Editor {
             scene_path: "scenes/main.scene".into(),
             undo: CommandStack::default(),
             editor_cam: EditorCamera::default(),
+            play_state: PlayState::Stopped,
             playing: None,
             console: Vec::new(),
             selected_asset: None,
@@ -207,30 +219,62 @@ impl Editor {
     }
 
     // -----------------------------------------------------------------------
-    // Play mode (snapshot / restore)
+    // Play mode (snapshot / restore) — Play · Pause · Stop · Restart · Step
     // -----------------------------------------------------------------------
 
-    pub fn toggle_play(&mut self) {
-        if self.playing.is_some() {
-            self.stop_play();
-        } else {
-            self.start_play();
+    /// Start playing (snapshot the edit state first).
+    pub fn play(&mut self) {
+        if self.play_state != PlayState::Stopped {
+            return;
         }
-    }
-
-    fn start_play(&mut self) {
         let snapshot = self.engine.scene.save(&self.engine.registry);
         self.playing = Some(PlaySnapshot {
             scene_text: snapshot,
         });
+        self.play_state = PlayState::Playing;
         self.engine.rules.clear();
         self.engine.playing_track = None;
         self.state.mark_all_fresh(&mut self.engine);
         self.state.drag = None;
-        self.log("info", "play mode started (F5 to stop)");
+        self.log(
+            "info",
+            "play (F5 stop \u{00b7} F6 pause \u{00b7} F7 step \u{00b7} F8 restart)",
+        );
     }
 
-    fn stop_play(&mut self) {
+    /// Pause the simulation (music pauses with it, position kept).
+    pub fn pause_play(&mut self) {
+        if self.play_state == PlayState::Playing {
+            self.play_state = PlayState::Paused;
+            self.engine.audio.pause_music();
+            self.log("info", "paused");
+        }
+    }
+
+    /// Resume a paused simulation.
+    pub fn resume_play(&mut self) {
+        if self.play_state == PlayState::Paused {
+            self.play_state = PlayState::Playing;
+            self.engine.audio.resume_music();
+            self.log("info", "resumed");
+        }
+    }
+
+    /// Pause/resume toggle.
+    pub fn toggle_pause(&mut self) {
+        match self.play_state {
+            PlayState::Playing => self.pause_play(),
+            PlayState::Paused => self.resume_play(),
+            PlayState::Stopped => {}
+        }
+    }
+
+    /// Stop playing and restore the edit-state snapshot.
+    pub fn stop_play(&mut self) {
+        if self.play_state == PlayState::Stopped {
+            return;
+        }
+        self.play_state = PlayState::Stopped;
         if let Some(snap) = self.playing.take() {
             match spark::scene::Scene::load(&snap.scene_text, &self.engine.registry) {
                 Ok(scene) => {
@@ -243,7 +287,50 @@ impl Editor {
                 }
                 Err(e) => self.log("error", &format!("restore failed: {e}")),
             }
-            self.log("info", "play mode stopped — scene restored");
+            self.log("info", "stopped \u{2014} scene restored");
+        }
+    }
+
+    /// Restart: restore the snapshot and keep playing from the top.
+    pub fn restart_play(&mut self) {
+        if self.play_state == PlayState::Stopped {
+            return;
+        }
+        let snapshot = self.playing.take();
+        self.play_state = PlayState::Stopped;
+        if let Some(snap) = snapshot {
+            match spark::scene::Scene::load(&snap.scene_text, &self.engine.registry) {
+                Ok(scene) => {
+                    self.engine.scene = scene;
+                    self.engine.rules.clear();
+                    self.engine.playing_track = None;
+                    self.engine.audio.stop_music();
+                    self.engine.physics.request_rebuild();
+                    self.state.retain_existing(&self.engine.scene.world);
+                }
+                Err(e) => self.log("error", &format!("restart restore failed: {e}")),
+            }
+        }
+        self.play();
+    }
+
+    /// Advance exactly one simulation frame (from pause).
+    pub fn step_frame(&mut self) {
+        if self.play_state != PlayState::Paused {
+            return;
+        }
+        self.engine.tick(1.0 / 60.0);
+        if self.engine.rules.quit_requested {
+            self.stop_play();
+        }
+    }
+
+    /// Legacy toggle kept for F5: stopped \u{2192} play, otherwise stop.
+    pub fn toggle_play(&mut self) {
+        if self.play_state == PlayState::Stopped {
+            self.play();
+        } else {
+            self.stop_play();
         }
     }
 
@@ -266,14 +353,18 @@ impl Editor {
         pixels_per_point: f32,
     ) {
         let dt = self.engine.take_dt();
-        let in_play = self.playing.is_some();
+        let in_play = self.play_state != PlayState::Stopped;
 
-        // Simulation: run in play mode only (edit mode is static by design).
-        if in_play {
+        // Simulation: run while playing (paused = frozen but still
+        // rendered; stepping ticks on demand from `step_frame`).
+        if self.play_state == PlayState::Playing {
             self.engine.tick(dt);
             if self.engine.rules.quit_requested {
                 self.stop_play();
             }
+        } else if self.play_state == PlayState::Paused {
+            // Keep hot-reload + music loop bookkeeping alive while frozen.
+            self.engine.assets.update();
         } else {
             // Keep asset hot-reload alive while editing.
             self.engine.assets.update();
@@ -282,7 +373,10 @@ impl Editor {
 
         // ---- egui UI pass -------------------------------------------------
         let raw = egui_state.take_egui_input(window);
-        let output = ctx.run(raw, |ctx| self.ui(ctx));
+        let output = ctx.run(raw, |ctx| {
+            self.play_shortcuts(ctx);
+            self.ui(ctx)
+        });
         egui_state.handle_platform_output(window, output.platform_output);
 
         let size = window.inner_size();
@@ -342,23 +436,29 @@ impl Editor {
 
     fn ui(&mut self, ctx: &egui::Context) {
         self.menu_bar(ctx);
-        egui::TopBottomPanel::bottom("console")
-            .resizable(true)
-            .show(ctx, |ui| {
-                self.bottom_panel(ui);
-            });
-        egui::SidePanel::left("hierarchy")
-            .resizable(true)
-            .default_width(240.0)
-            .show(ctx, |ui| {
-                self.hierarchy_panel(ui);
-            });
-        egui::SidePanel::right("inspector")
-            .resizable(true)
-            .default_width(320.0)
-            .show(ctx, |ui| {
-                self.inspector_panel(ui);
-            });
+        // Maximize-on-play: while playing, the viewport becomes the whole
+        // window (a real game view at the window's resolution) unless the
+        // user keeps the editor panels visible.
+        let panels_hidden = self.play_state != PlayState::Stopped && self.state.maximize_on_play;
+        if !panels_hidden {
+            egui::TopBottomPanel::bottom("console")
+                .resizable(true)
+                .show(ctx, |ui| {
+                    self.bottom_panel(ui);
+                });
+            egui::SidePanel::left("hierarchy")
+                .resizable(true)
+                .default_width(240.0)
+                .show(ctx, |ui| {
+                    self.hierarchy_panel(ui);
+                });
+            egui::SidePanel::right("inspector")
+                .resizable(true)
+                .default_width(320.0)
+                .show(ctx, |ui| {
+                    self.inspector_panel(ui);
+                });
+        }
         egui::CentralPanel::default().show(ctx, |ui| {
             self.viewport_panel(ui, ctx);
         });
@@ -417,7 +517,7 @@ impl Editor {
                     }
                 });
                 ui.menu_button("Scene", |ui| {
-                    let playing = self.playing.is_some();
+                    let playing = self.play_state != PlayState::Stopped;
                     let label = if playing { "Stop (F5)" } else { "Play (F5)" };
                     if ui.button(label).clicked() {
                         self.toggle_play();
@@ -449,7 +549,12 @@ impl Editor {
                         self.add_mesh("cube");
                         ui.close();
                     }
-                    if ui.button("Add Plane (3D ground)").clicked() {
+                    if ui.button("Add Ground (physics floor)").clicked() {
+                        self.set_dimension_if(Dimension::D3);
+                        self.add_ground();
+                        ui.close();
+                    }
+                    if ui.button("Add Plane (visual)").clicked() {
                         self.set_dimension_if(Dimension::D3);
                         self.add_mesh("plane");
                         ui.close();
@@ -465,6 +570,10 @@ impl Editor {
                     }
                     if ui.button("Add Point Light").clicked() {
                         self.add_point_light();
+                        ui.close();
+                    }
+                    if ui.button("Add Spot Light").clicked() {
+                        self.add_spot_light();
                         ui.close();
                     }
                     if ui.button("Add Sun (directional)").clicked() {
@@ -530,14 +639,48 @@ impl Editor {
         self.state.retain_existing(&self.engine.scene.world);
     }
 
+    /// Play-mode keyboard shortcuts (work in every mode; F5 toggles).
+    fn play_shortcuts(&mut self, ctx: &egui::Context) {
+        use egui::Key;
+        if ctx.wants_keyboard_input() {
+            return;
+        }
+        let (f5, f6, f7, f8) = ctx.input(|i| {
+            (
+                i.key_pressed(Key::F5),
+                i.key_pressed(Key::F6),
+                i.key_pressed(Key::F7),
+                i.key_pressed(Key::F8),
+            )
+        });
+        if f5 {
+            self.toggle_play();
+        }
+        if f6 {
+            self.toggle_pause();
+        }
+        if f7 {
+            self.step_frame();
+        }
+        if f8 {
+            self.restart_play();
+        }
+    }
+
     fn status_area(&mut self, ui: &mut egui::Ui) {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let fps = self.engine.stats.fps;
             ui.weak(format!("{fps:.0} FPS"));
-            if self.playing.is_some() {
-                ui.colored_label(egui::Color32::GREEN, "▶ PLAYING");
-            } else {
-                ui.weak("edit");
+            match self.play_state {
+                PlayState::Playing => {
+                    ui.colored_label(egui::Color32::GREEN, "▶ PLAYING");
+                }
+                PlayState::Paused => {
+                    ui.colored_label(egui::Color32::YELLOW, "⏸ PAUSED");
+                }
+                PlayState::Stopped => {
+                    ui.weak("edit");
+                }
             }
             let dim = match self.engine.scene.dimension {
                 Dimension::D2 => "2D",

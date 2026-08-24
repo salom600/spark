@@ -98,6 +98,24 @@ impl Audio {
         self.music_bytes.clear();
     }
 
+    /// Pause/resume the music sink (play-mode pause without losing position).
+    pub fn pause_music(&mut self) {
+        if let Some(sink) = &self.music {
+            sink.pause();
+        }
+    }
+
+    pub fn resume_music(&mut self) {
+        if let Some(sink) = &self.music {
+            sink.play();
+        }
+    }
+
+    /// Is the music sink currently playing (non-empty)?
+    pub fn music_playing(&self) -> bool {
+        self.music.as_ref().is_some_and(|s| !s.empty())
+    }
+
     pub fn set_music_volume(&mut self, volume: f32) {
         self.music_volume = volume;
         if let Some(sink) = &self.music {

@@ -8,8 +8,11 @@ struct Globals {
     light_view_proj: mat4x4<f32>,
     dir_light: vec4<f32>,       // xyz = direction (towards scene), w = present
     dir_light_color: vec4<f32>, // rgb * intensity, a = ambient
-    light_meta: vec4<f32>,      // x = point count, y = shadow bias
+    light_meta: vec4<f32>,      // x = point count, y = shadow bias, z = spot present
     point_lights: array<vec4<f32>, 32>, // pairs: (pos.xyz, range), (color, pad)
+    spot_pos: vec4<f32>,        // xyz = position, w = range
+    spot_dir: vec4<f32>,        // xyz = direction, w = cos(outer half angle)
+    spot_color: vec4<f32>,      // rgb = color * intensity, a = cos(inner half angle)
 };
 
 @group(0) @binding(0) var<uniform> globals: Globals;
@@ -138,6 +141,27 @@ fn fs_main(in: VertOut) -> @location(0) vec4<f32> {
         let diff = albedo * n_dot_l;
         let spec = mix(vec3<f32>(1.0), albedo, metallic) * ggx_specular(n, l, v, roughness) * (1.0 - roughness * 0.5);
         color += lcol * (diff + spec) * falloff;
+    }
+
+    // Spot light (first one; no shadow casting).
+    if (globals.light_meta.z > 0.5) {
+        let to_spot = globals.spot_pos.xyz - in.world_pos;
+        let dist = length(to_spot);
+        let range = max(globals.spot_pos.w, 0.001);
+        if (dist > 0.001 && dist < range) {
+            let l = to_spot / dist;
+            let cos_theta = dot(-l, normalize(globals.spot_dir.xyz));
+            let cos_outer = globals.spot_dir.w;
+            let cos_inner = globals.spot_color.a;
+            let cone = smoothstep(cos_outer, cos_inner, cos_theta);
+            let n_dot_l = max(dot(n, l), 0.0);
+            if (cone > 0.0 && n_dot_l > 0.0) {
+                let att = pow(clamp(1.0 - dist / range, 0.0, 1.0), 2.0);
+                let diff = albedo * n_dot_l;
+                let spec = mix(vec3<f32>(1.0), albedo, metallic) * ggx_specular(n, l, v, roughness) * (1.0 - roughness * 0.5);
+                color += globals.spot_color.rgb * (diff + spec) * cone * att;
+            }
+        }
     }
 
     color += in.emissive.rgb;

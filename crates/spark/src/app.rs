@@ -47,6 +47,8 @@ pub struct Engine<'window> {
     pub hud: Option<HudFn>,
     /// Track currently playing (music autoplay bookkeeping).
     pub playing_track: Option<String>,
+    /// Volume the current track started at (live volume-follow).
+    pub music_volume: f32,
     pub(crate) last_instant: Instant,
     pub stats: FrameStats,
 }
@@ -115,6 +117,7 @@ impl<'window> Engine<'window> {
             viewport_origin_px: Vec2::ZERO,
             hud: None,
             playing_track: None,
+            music_volume: 0.6,
             last_instant: Instant::now(),
             stats: FrameStats::default(),
         };
@@ -316,12 +319,12 @@ impl<'window> Engine<'window> {
     }
 
     pub fn primary_camera(&self) -> Option<(Camera, Transform)> {
-        self.scene
-            .world
-            .query::<(&Camera, &Transform)>()
-            .iter()
-            .next()
-            .map(|(e, (c, _))| (*c, crate::ecs::world_transform(&self.scene.world, e)))
+        let mut q = self.scene.world.query::<(&Camera, &Transform)>();
+        let mut found = q.iter().find(|(_, (c, _))| c.active);
+        if found.is_none() {
+            found = q.iter().next();
+        }
+        found.map(|(e, (c, _))| (*c, crate::ecs::world_transform(&self.scene.world, e)))
     }
 
     fn camera_follow(&mut self, dt: f32) {
@@ -362,7 +365,16 @@ impl<'window> Engine<'window> {
                 if let Some(bytes) = self.assets.sound(&m.track) {
                     self.audio.play_music(&bytes, m.volume);
                     self.playing_track = Some(m.track);
+                    self.music_volume = m.volume;
                 }
+            }
+            // Same track but the volume changed (live Inspector edits).
+            Some(m)
+                if self.playing_track.as_deref() == Some(m.track.as_str())
+                    && (self.music_volume - m.volume).abs() > 1e-3 =>
+            {
+                self.audio.set_music_volume(m.volume);
+                self.music_volume = m.volume;
             }
             None if self.playing_track.is_some() => {
                 self.audio.stop_music();

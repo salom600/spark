@@ -18,7 +18,7 @@ impl Editor {
     pub(crate) fn hierarchy_panel(&mut self, ui: &mut egui::Ui) {
         ui.heading("Hierarchy");
         ui.separator();
-        if self.playing.is_some() {
+        if self.play_state != crate::PlayState::Stopped {
             ui.weak("(snapshot — edits disabled while playing)");
         }
         let released = ui.ctx().input(|i| i.pointer.any_released());
@@ -404,12 +404,14 @@ impl Editor {
 
     pub(crate) fn viewport_panel(&mut self, ui: &mut egui::Ui, _ctx: &egui::Context) {
         let ppp = ui.ctx().pixels_per_point();
-        let playing = self.playing.is_some();
+        let playing = self.play_state != crate::PlayState::Stopped;
         let dimension = self.engine.scene.dimension;
 
         if !playing {
             self.viewport_toolbar(ui);
             self.viewport_shortcuts(ui.ctx());
+        } else {
+            self.play_controls(ui);
         }
 
         // Compute the viewport rect (below the toolbar if any) in physical
@@ -436,6 +438,46 @@ impl Editor {
             self.draw_overlay(ui, &painter, ppp);
             self.viewport_interaction(ui, rect);
         }
+    }
+
+    /// Play-mode control strip (Pause/Step/Restart/Stop + maximize toggle).
+    fn play_controls(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            match self.play_state {
+                crate::PlayState::Playing => {
+                    if ui.button("⏸ Pause (F6)").clicked() {
+                        self.pause_play();
+                    }
+                }
+                crate::PlayState::Paused => {
+                    if ui.button("▶ Resume (F6)").clicked() {
+                        self.resume_play();
+                    }
+                    if ui.button("⏭ Step (F7)").clicked() {
+                        self.step_frame();
+                    }
+                }
+                crate::PlayState::Stopped => {}
+            }
+            if ui.button("↺ Restart (F8)").clicked() {
+                self.restart_play();
+            }
+            if ui.button("⏹ Stop (F5)").clicked() {
+                self.stop_play();
+            }
+            ui.separator();
+            ui.checkbox(&mut self.state.maximize_on_play, "maximize on play")
+                .on_hover_text("hide editor panels while playing (game view fills the window)");
+            ui.separator();
+            let state = match self.play_state {
+                crate::PlayState::Playing => "PLAYING",
+                crate::PlayState::Paused => "PAUSED",
+                crate::PlayState::Stopped => "STOPPED",
+            };
+            ui.weak(format!(
+                "game view · {state} · ESC-free camera, input goes to the game"
+            ));
+        });
     }
 
     fn viewport_toolbar(&mut self, ui: &mut egui::Ui) {
@@ -514,7 +556,6 @@ impl Editor {
                 i.key_pressed(Key::R),
                 i.key_pressed(Key::T),
                 i.key_pressed(Key::Y),
-                i.key_pressed(Key::F5),
                 i.key_pressed(Key::F),
                 i.key_pressed(Key::Home),
                 i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace),
@@ -525,7 +566,7 @@ impl Editor {
                 i.modifiers.command && i.modifiers.shift && i.key_pressed(Key::Z),
             )
         });
-        let (q, w, e, r, t, y, f5, focus, frame_all, del, save, dupe, undo, redo, redo_alt) = input;
+        let (q, w, e, r, t, y, focus, frame_all, del, save, dupe, undo, redo, redo_alt) = input;
         if q {
             self.state.tool = Tool::Hand;
         }
@@ -543,9 +584,6 @@ impl Editor {
         }
         if y {
             self.state.tool = Tool::Transform;
-        }
-        if f5 {
-            self.toggle_play();
         }
         if focus {
             self.focus_selection();
@@ -1253,10 +1291,34 @@ impl Editor {
                     .default_open(true)
                     .show(ui, |ui| {
                         for path in list {
-                            let selected = self.selected_asset.as_deref() == Some(path.as_str());
-                            if ui.selectable_label(selected, &path).clicked() {
-                                self.selected_asset = Some(path.clone());
-                            }
+                            ui.horizontal(|ui| {
+                                let selected =
+                                    self.selected_asset.as_deref() == Some(path.as_str());
+                                if ui.selectable_label(selected, &path).clicked() {
+                                    self.selected_asset = Some(path.clone());
+                                }
+                                // Sound preview: play it through the engine's
+                                // audio output (real playback when a device
+                                // exists; a one-time warning otherwise).
+                                if kind == AssetKind::Sound {
+                                    let p = path.clone();
+                                    if ui
+                                        .small_button("\u{25b6}")
+                                        .on_hover_text("preview sound")
+                                        .clicked()
+                                    {
+                                        if let Some(bytes) =
+                                            self.engine.assets.sound(&p).map(|b| b.to_vec())
+                                        {
+                                            let name = p.clone();
+                                            self.engine.audio.play_bytes(&bytes, 0.8);
+                                            self.log("info", &format!("previewing {name}"));
+                                        } else {
+                                            self.log("warn", &format!("cannot read {p}"));
+                                        }
+                                    }
+                                }
+                            });
                             if self.state.primary().is_some() {
                                 let p = path.clone();
                                 ui.menu_button("→ assign", |ui| {

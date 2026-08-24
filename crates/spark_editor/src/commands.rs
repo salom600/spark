@@ -273,6 +273,65 @@ impl Editor {
         );
     }
 
+    pub fn add_spot_light(&mut self) {
+        self.spawn_with_undo(
+            "Spot Light",
+            vec![(
+                "Light",
+                ron::to_string(&Light {
+                    kind: LightKind::Spot {
+                        direction: Vec3::new(0.0, -1.0, 0.0),
+                        angle_deg: 45.0,
+                        range: 12.0,
+                    },
+                    color: Color::WHITE,
+                    intensity: 3.0,
+                })
+                .unwrap_or_default(),
+            )],
+        );
+    }
+
+    /// Ground plane: static box collider + plane mesh, top surface at y=0.
+    /// The physics acceptance scenario's floor, one menu click away.
+    pub fn add_ground(&mut self) {
+        let transform = Transform {
+            position: Vec3::new(0.0, -0.5, 0.0),
+            scale: Vec3::new(20.0, 1.0, 20.0),
+            ..Default::default()
+        };
+        let world = &mut self.engine.scene.world;
+        let e = world.spawn((
+            ecs::Name("Ground".into()),
+            transform,
+            MeshRenderer {
+                mesh: "plane".into(),
+                ..Default::default()
+            },
+            RigidBody {
+                kind: BodyKind::Static,
+                ..Default::default()
+            },
+            Collider {
+                shape: ColliderShape::Box {
+                    half: Vec3::new(0.5, 0.5, 0.5),
+                },
+                ..Default::default()
+            },
+        ));
+        // The collider half-extents are in *local* space; with scale 20 the
+        // world half-extents become (10, 0.5, 10) — physics builds the
+        // cuboid from local half * world scale.
+        let record = self.engine.scene.record_of(e, &self.engine.registry);
+        self.push_prepared_command(Box::new(CreateEntitiesCommand {
+            label: "Add Ground".into(),
+            records: vec![record],
+            entities: vec![Some(e)],
+        }));
+        self.state.select(e);
+        self.log("info", "added Ground (static collider, surface at y=0)");
+    }
+
     pub fn add_camera(&mut self) {
         let persp = matches!(self.engine.scene.dimension, spark::scene::Dimension::D3);
         let cam = if persp {

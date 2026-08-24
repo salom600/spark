@@ -293,7 +293,7 @@ impl Physics {
                 }
                 b.wake_up(true);
             }
-            for cb in collider_builders_2d(&col, rb.restitution, rb.friction) {
+            for cb in collider_builders_2d(&col, rb.restitution, rb.friction, transform.scale) {
                 let h = self
                     .p2
                     .colliders
@@ -326,7 +326,7 @@ impl Physics {
                 }
                 b.wake_up(true);
             }
-            for cb in collider_builders_3d(&col, rb.restitution, rb.friction) {
+            for cb in collider_builders_3d(&col, rb.restitution, rb.friction, transform.scale) {
                 let h = self
                     .p3
                     .colliders
@@ -705,13 +705,24 @@ impl Physics3 {
     }
 }
 
-fn collider_builders_2d(c: &Collider, restitution: f32, friction: f32) -> Vec<r2::ColliderBuilder> {
+/// Collider shapes scale with the entity's world scale (a 1×1×1 box under a
+/// 20× scale renders 20 wide and *collides* 20 wide). Negative/zero scales
+/// are clamped to a small positive epsilon.
+fn collider_builders_2d(
+    c: &Collider,
+    restitution: f32,
+    friction: f32,
+    scale: Vec3,
+) -> Vec<r2::ColliderBuilder> {
+    let (sx, sy) = (scale.x.abs().max(1e-4), scale.y.abs().max(1e-4));
     vec![
         match &c.shape {
-            ColliderShape::Box { half } => r2::ColliderBuilder::cuboid(half.x.abs(), half.y.abs()),
-            ColliderShape::Ball { r } => r2::ColliderBuilder::ball(r.abs()),
+            ColliderShape::Box { half } => {
+                r2::ColliderBuilder::cuboid(half.x.abs() * sx, half.y.abs() * sy)
+            }
+            ColliderShape::Ball { r } => r2::ColliderBuilder::ball(r.abs() * sx.max(sy)),
             ColliderShape::Capsule { half_height, r } => {
-                r2::ColliderBuilder::capsule_y(half_height.abs(), r.abs())
+                r2::ColliderBuilder::capsule_y(half_height.abs() * sy, r.abs() * sx.max(sy))
             }
         }
         .sensor(c.sensor)
@@ -721,15 +732,25 @@ fn collider_builders_2d(c: &Collider, restitution: f32, friction: f32) -> Vec<r2
     ]
 }
 
-fn collider_builders_3d(c: &Collider, restitution: f32, friction: f32) -> Vec<r3::ColliderBuilder> {
+fn collider_builders_3d(
+    c: &Collider,
+    restitution: f32,
+    friction: f32,
+    scale: Vec3,
+) -> Vec<r3::ColliderBuilder> {
+    let (sx, sy, sz) = (
+        scale.x.abs().max(1e-4),
+        scale.y.abs().max(1e-4),
+        scale.z.abs().max(1e-4),
+    );
     vec![
         match &c.shape {
             ColliderShape::Box { half } => {
-                r3::ColliderBuilder::cuboid(half.x.abs(), half.y.abs(), half.z.abs())
+                r3::ColliderBuilder::cuboid(half.x.abs() * sx, half.y.abs() * sy, half.z.abs() * sz)
             }
-            ColliderShape::Ball { r } => r3::ColliderBuilder::ball(r.abs()),
+            ColliderShape::Ball { r } => r3::ColliderBuilder::ball(r.abs() * sx.max(sy).max(sz)),
             ColliderShape::Capsule { half_height, r } => {
-                r3::ColliderBuilder::capsule_y(half_height.abs(), r.abs())
+                r3::ColliderBuilder::capsule_y(half_height.abs() * sy, r.abs() * sx.max(sz))
             }
         }
         .sensor(c.sensor)
