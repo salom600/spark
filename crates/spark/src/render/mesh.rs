@@ -191,6 +191,13 @@ impl MeshPass {
         rpass.draw_indexed(0..mesh.count, 0, 0..count);
     }
 
+    /// Draw the depth-only shadow variant. The caller passes the *pre-built*
+    /// `shadow_bind` (created once in `Renderer::build` with all 3 entries:
+    /// globals buffer + shadow texture + comparison sampler). Recreating the
+    /// bind group here used to provide only 1 entry, which mismatches the
+    /// 3-entry `shadow_bgl` layout and panics inside `create_bind_group` on
+    /// the first frame a directional light and a mesh coexist — i.e. the
+    /// very first frame after Scene → Add Cube (3D).
     #[allow(clippy::too_many_arguments)]
     pub fn draw_shadow(
         &mut self,
@@ -198,25 +205,16 @@ impl MeshPass {
         queue: &wgpu::Queue,
         rpass: &mut wgpu::RenderPass<'_>,
         mesh: &super::GpuMesh,
-        shadow_bgl: &wgpu::BindGroupLayout,
-        globals_buf: &wgpu::Buffer,
+        shadow_bind: &wgpu::BindGroup,
         instances: &[u8],
     ) {
-        let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("spark.mesh.shadow_group"),
-            layout: shadow_bgl,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: globals_buf.as_entire_binding(),
-            }],
-        });
         let buf = self
             .ensure_instance_buf(device, instances.len() as u64, true)
             .clone();
         queue.write_buffer(&buf, 0, instances);
 
         rpass.set_pipeline(&self.shadow_pipeline);
-        rpass.set_bind_group(0, &group, &[]);
+        rpass.set_bind_group(0, shadow_bind, &[]);
         rpass.set_vertex_buffer(0, mesh.verts.slice(..));
         rpass.set_vertex_buffer(1, buf.slice(..instances.len() as u64));
         rpass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);

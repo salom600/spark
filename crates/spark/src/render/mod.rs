@@ -740,8 +740,7 @@ impl<'window> Renderer<'window> {
                     &self.queue,
                     &mut rpass,
                     &gpu,
-                    &self.shadow_bgl,
-                    &self.globals_buf,
+                    &self.shadow_bind,
                     bytemuck::cast_slice(instances),
                 );
             }

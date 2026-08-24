@@ -253,20 +253,80 @@ impl Editor {
     }
 
     // -----------------------------------------------------------------------
-    // Viewport (center): camera controls
+    // Viewport (center): camera controls + 3D gizmo + picking
     // -----------------------------------------------------------------------
 
     pub(crate) fn viewport_panel(&mut self, ui: &mut egui::Ui, _ctx: &egui::Context) {
-        let rect = ui.max_rect();
         let ppp = ui.ctx().pixels_per_point();
+
+        // ---- Toolbar (Move / Rotate / Scale) — shown only in edit mode + 3D
+        if self.playing.is_none()
+            && matches!(self.engine.scene.dimension, spark::scene::Dimension::D3)
+        {
+            ui.horizontal(|ui| {
+                use crate::state::GizmoMode;
+                let mode = self.state.gizmo_mode;
+                let mk = |label: &str, m: GizmoMode, ui: &mut egui::Ui| {
+                    if ui.selectable_label(mode == m, label).clicked() {
+                        self.state.gizmo_mode = m;
+                    }
+                };
+                mk("Move", GizmoMode::Translate, ui);
+                mk("Rotate", GizmoMode::Rotate, ui);
+                mk("Scale", GizmoMode::Scale, ui);
+                ui.separator();
+                ui.weak("RMB: orbit  |  MMB: pan  |  Wheel: zoom  |  LMB: pick/drag");
+            });
+        }
+
+        // Compute the viewport rect (below the toolbar if any) in physical
+        // pixels — this is what the GPU scissor + 3D overlay use.
+        let rect = ui.available_rect_before_wrap();
         let x = (rect.min.x * ppp) as u32;
         let y = (rect.min.y * ppp) as u32;
         let w = (rect.width() * ppp) as u32;
         let h = (rect.height() * ppp) as u32;
         self.state.viewport_px = [x, y, w.max(1), h.max(1)];
 
+        // The 3D overlay (grid + axes + gizmo) is drawn via egui's Painter,
+        // so we don't need a new wgpu pass. We project 3D points to screen
+        // pixels using the same view_proj the GPU uses.
+        let painter = ui.painter().clone();
         if self.playing.is_none() {
+            self.draw_3d_overlay(ui, &painter, ppp);
             self.viewport_interaction(ui);
+        }
+    }
+
+    fn draw_3d_overlay(&mut self, ui: &mut egui::Ui, painter: &egui::Painter, ppp: f32) {
+        let dimension = self.engine.scene.dimension;
+        let viewport = self.state.viewport_rect_px();
+        let aspect = viewport.2 as f32 / viewport.3.max(1) as f32;
+        let vp = crate::gizmo::view_proj(&self.editor_cam, dimension, aspect);
+
+        if dimension == spark::scene::Dimension::D3 {
+            crate::gizmo::draw_grid_and_axes(painter, vp, self.state.viewport_px, ppp);
+        }
+
+        // Translate gizmo at the selected entity's position.
+        let mode = self.state.gizmo_mode;
+        if mode == crate::state::GizmoMode::Translate
+            && let Some(e) = self.state.selected
+            && self.engine.scene.world.contains(e)
+        {
+            if let Ok(t) = self.engine.scene.world.get::<&Transform>(e) {
+                let origin = t.position;
+                drop(t);
+                let mouse = ui.input(|i| i.pointer.hover_pos()).unwrap_or(egui::pos2(0.0, 0.0));
+                let _ = crate::gizmo::draw_translate_gizmo(
+                    painter,
+                    vp,
+                    origin,
+                    self.state.viewport_px,
+                    ppp,
+                    mouse,
+                );
+            }
         }
     }
 
@@ -274,20 +334,131 @@ impl Editor {
         if !ui.rect_contains_pointer(ui.max_rect()) {
             return;
         }
-        let (down, delta, secondary) = ui.ctx().input(|i| {
-            (
-                i.pointer.primary_down(),
-                i.pointer.delta(),
-                i.pointer.secondary_down(),
-            )
-        });
+        let dimension = self.engine.scene.dimension;
+        let viewport = self.state.viewport_rect_px();
+        let aspect = viewport.2 as f32 / viewport.3.max(1) as f32;
+
+        let (primary, middle, secondary, delta, pressed, released, mouse) =
+            ui.ctx().input(|i| {
+                (
+                    i.pointer.primary_down(),
+                    i.pointer.middle_down(),
+                    i.pointer.secondary_down(),
+                    i.pointer.delta(),
+                    i.pointer.pressed(egui::PointerButton::Primary),
+                    i.pointer.released(egui::PointerButton::Primary),
+                    i.pointer.hover_pos(),
+                )
+            });
+
+        // Orbit (RMB drag).
         if secondary {
-            self.editor_cam.look(Vec2::new(delta.x, delta.y));
-        } else if down {
             self.editor_cam
-                .pan(Vec2::new(delta.x, delta.y), self.engine.scene.dimension);
+                .look(Vec2::new(delta.x, delta.y));
+            return;
+        }
+        // Pan (MMB drag).
+        if middle {
+            self.editor_cam
+                .pan(Vec2::new(delta.x, delta.y), dimension);
+            return;
+        }
+
+        // Gizmo drag (LMB): if a drag is in progress, continue it; otherwise
+        // check whether the click landed on a gizmo axis.
+        let Some(mouse_pos) = mouse else { return };
+
+        if primary && self.state.gizmo_drag_axis.is_some() {
+            // Continue dragging.
+            self.apply_gizmo_drag(aspect, mouse_pos, ui.ctx().pixels_per_point());
+            return;
+        }
+        if pressed && dimension == spark::scene::Dimension::D3 {
+            // Check gizmo axis hit first (only Translate mode + an entity
+            // selected). If hit, start a drag.
+            if self.state.gizmo_mode == crate::state::GizmoMode::Translate
+                && let Some(e) = self.state.selected
+                && self.engine.scene.world.contains(e)
+            {
+                let origin = self
+                    .engine
+                    .scene
+                    .world
+                    .get::<&Transform>(e)
+                    .map(|t| t.position)
+                    .unwrap_or_default();
+                let vp = crate::gizmo::view_proj(&self.editor_cam, dimension, aspect);
+                if let Some(axis) = crate::gizmo::draw_translate_gizmo(
+                    ui.painter(),
+                    vp,
+                    origin,
+                    self.state.viewport_px,
+                    ui.ctx().pixels_per_point(),
+                    mouse_pos,
+                ) {
+                    self.state.gizmo_drag_axis = Some(axis);
+                    self.state.gizmo_drag_start_mouse = Some(mouse_pos);
+                    self.state.gizmo_drag_start_transform = self
+                        .engine
+                        .scene
+                        .world
+                        .get::<&Transform>(e)
+                        .ok()
+                        .map(|t| *t);
+                    return;
+                }
+            }
+            // Otherwise: entity picking via ray vs AABB.
+            let (origin, dir) = crate::gizmo::pick_ray(
+                &self.editor_cam,
+                dimension,
+                aspect,
+                mouse_pos,
+                self.state.viewport_px,
+                ui.ctx().pixels_per_point(),
+            );
+            if let Some((entity, _t)) =
+                crate::gizmo::pick_entity(&self.engine.scene.world, origin, dir)
+            {
+                self.state.selected = Some(entity);
+            }
+        }
+        if released && self.state.gizmo_drag_axis.is_some() {
+            // Commit the drag: capture undo state.
+            self.state.gizmo_drag_axis = None;
+            self.state.gizmo_drag_start_mouse = None;
+            self.state.gizmo_drag_start_transform = None;
+            self.engine.physics.request_rebuild();
         }
     }
+
+    fn apply_gizmo_drag(&mut self, aspect: f32, mouse_pos: egui::Pos2, ppp: f32) {
+        let Some(axis) = self.state.gizmo_drag_axis else { return };
+        let Some(start_mouse) = self.state.gizmo_drag_start_mouse else { return };
+        let Some(start_t) = self.state.gizmo_drag_start_transform else { return };
+        let Some(e) = self.state.selected else { return };
+        if !self.engine.scene.world.contains(e) {
+            return;
+        }
+        let delta = crate::gizmo::axis_drag_delta(
+            &self.editor_cam,
+            aspect,
+            start_t.position,
+            axis,
+            mouse_pos,
+            self.state.viewport_px,
+            ppp,
+            start_mouse,
+        );
+        let _ = self.engine.scene.world.insert_one(
+            e,
+            Transform {
+                position: start_t.position + delta,
+                ..start_t
+            },
+        );
+    }
+
 
     // -----------------------------------------------------------------------
     // Bottom: asset browser + console

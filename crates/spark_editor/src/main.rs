@@ -15,6 +15,7 @@
 //! one binary, one code path, WYSIWYG by construction (DECISIONS.md §4.4).
 
 mod commands;
+mod gizmo;
 mod panels;
 mod state;
 
