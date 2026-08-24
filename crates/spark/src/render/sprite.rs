@@ -128,7 +128,7 @@ impl SpritePass {
     ) {
         // wgpu handles are cheaply cloneable; clone ends the &mut self borrow.
         let needed = instances.len() as u64;
-        if self.instance_buf.as_ref().is_none_or(|b| self.instance_cap < needed) {
+        if self.instance_buf.as_ref().is_none_or(|_| self.instance_cap < needed) {
             let cap = needed.max(4096);
             self.instance_buf = Some(device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("spark.sprite.instances"),

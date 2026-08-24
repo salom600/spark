@@ -203,7 +203,7 @@ impl MeshPass {
         } else {
             (&mut self.instance_buf, &mut self.instance_cap)
         };
-        if buf.as_ref().map_or(true, |b| *cap < needed) {
+        if buf.as_ref().is_none_or(|b| *cap < needed) {
             let size = needed.max(8192);
             *buf = Some(device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some(if shadow { "spark.mesh.shadow_instances" } else { "spark.mesh.instances" }),

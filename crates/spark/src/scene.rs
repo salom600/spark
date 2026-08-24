@@ -47,7 +47,7 @@ pub enum ComponentData {
 }
 
 /// One entity (with subtree) as stored in scene and prefab files.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct EntityRecord {
     #[serde(default)]
     pub name: Option<String>,

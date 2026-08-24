@@ -42,7 +42,8 @@ pub struct Engine<'window> {
     /// Size of the active viewport in physical pixels (for mouse→world).
     pub viewport_px: Vec2,
     pub hud: Option<HudFn>,
-    pub(crate) playing_track: Option<String>,
+    /// Track currently playing (music autoplay bookkeeping).
+    pub playing_track: Option<String>,
     pub(crate) last_instant: Instant,
     pub stats: FrameStats,
 }
@@ -330,6 +331,7 @@ pub fn run_game_with(project_dir: &Path, hud: Option<HudFn>) -> anyhow::Result<(
     // Single-window application: the window lives for the process lifetime,
     // which gives the wgpu surface a 'static borrow (winit 0.30 has no
     // Arc<Window>, see DECISIONS.md §6).
+    #[allow(deprecated)] // EventLoop::create_window; the run_app port is roadmap
     let window: &'static winit::window::Window = Box::leak(Box::new(event_loop.create_window(attrs)?));
 
     let mut engine = Engine::windowed(project_dir, window)?;
@@ -346,6 +348,7 @@ pub fn run_game_with(project_dir: &Path, hud: Option<HudFn>) -> anyhow::Result<(
         None,
     );
 
+    #[allow(deprecated)] // EventLoop::run; the run_app port is roadmap
     event_loop.run(move |event, elwt| {
         use winit::event::{Event, WindowEvent};
         match event {

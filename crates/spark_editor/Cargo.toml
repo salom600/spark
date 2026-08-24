@@ -15,6 +15,9 @@ spark = { path = "../spark", version = "0.1.0" }
 
 anyhow.workspace = true
 egui.workspace = true
+egui-wgpu.workspace = true
+egui-winit.workspace = true
+winit.workspace = true
 env_logger.workspace = true
 log.workspace = true
 ron.workspace = true
