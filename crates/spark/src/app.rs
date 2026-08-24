@@ -83,10 +83,19 @@ impl<'window> Engine<'window> {
         let assets = Assets::new(&root);
         let registry = default_registry();
 
+        // Headless (no renderer) engines never open audio devices: CI
+        // runners and servers may have none, and probing them from several
+        // test threads is not safe on every platform.
+        let audio = if renderer.is_none() {
+            Audio::disabled()
+        } else {
+            Audio::new()
+        };
+
         let mut engine = Engine {
             scene: Scene::default(),
             assets,
-            audio: Audio::new(),
+            audio,
             input: Input::new(),
             physics: Physics::new(project.as_ref().map(|p| p.dimension).unwrap_or_default()),
             rules: RuleRuntime::default(),

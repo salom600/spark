@@ -26,6 +26,20 @@ impl Default for Audio {
 }
 
 impl Audio {
+    /// A silent instance that never touches an output device — used by the
+    /// headless engine (CI, servers) where audio hardware must not be
+    /// probed at all.
+    pub fn disabled() -> Self {
+        Self {
+            _stream: None,
+            mixer: None,
+            music: None,
+            music_bytes: Vec::new(),
+            music_volume: 0.6,
+            warned: false,
+        }
+    }
+
     /// Connect to the default output device; degrade gracefully if absent.
     pub fn new() -> Self {
         let stream = rodio::OutputStreamBuilder::open_default_stream().ok();
