@@ -30,3 +30,6 @@ rodio.workspace = true
 serde.workspace = true
 wgpu.workspace = true
 winit.workspace = true
+
+[features]
+debug_phys = []
