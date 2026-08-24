@@ -60,7 +60,7 @@ impl EditorCamera {
         // nearby cameras move slowly and far cameras move fast.
         let forward = self.forward();
         let dist = self.pos.length();
-        let step = -dy * 0.5 * dist.max(1.0).min(50.0);
+        let step = -dy * 0.5 * dist.clamp(1.0, 50.0);
         self.pos += forward * step;
         if self.pos.length() < 0.5 {
             self.pos = forward * 0.5;
@@ -163,17 +163,12 @@ pub struct EditorState {
 }
 
 /// Active gizmo mode (matches the toolbar buttons).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum GizmoMode {
+    #[default]
     Translate,
     Rotate,
     Scale,
-}
-
-impl Default for GizmoMode {
-    fn default() -> Self {
-        Self::Translate
-    }
 }
 
 impl Default for EditorState {

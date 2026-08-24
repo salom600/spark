@@ -313,20 +313,19 @@ impl Editor {
         if mode == crate::state::GizmoMode::Translate
             && let Some(e) = self.state.selected
             && self.engine.scene.world.contains(e)
+            && let Ok(t) = self.engine.scene.world.get::<&Transform>(e)
         {
-            if let Ok(t) = self.engine.scene.world.get::<&Transform>(e) {
-                let origin = t.position;
-                drop(t);
-                let mouse = ui.input(|i| i.pointer.hover_pos()).unwrap_or(egui::pos2(0.0, 0.0));
-                let _ = crate::gizmo::draw_translate_gizmo(
-                    painter,
-                    vp,
-                    origin,
-                    self.state.viewport_px,
-                    ppp,
-                    mouse,
-                );
-            }
+            let origin = t.position;
+            drop(t);
+            let mouse = ui.input(|i| i.pointer.hover_pos()).unwrap_or(egui::pos2(0.0, 0.0));
+            let _ = crate::gizmo::draw_translate_gizmo(
+                painter,
+                vp,
+                origin,
+                self.state.viewport_px,
+                ppp,
+                mouse,
+            );
         }
     }
 

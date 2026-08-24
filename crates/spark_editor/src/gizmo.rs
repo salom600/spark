@@ -253,6 +253,7 @@ pub fn pick_entity(
 /// current mouse position onto the gizmo axis line in screen space, then
 /// scales by an approximate world-unit-per-pixel factor based on the
 /// camera's distance to the gizmo and the perspective FOV.
+#[allow(clippy::too_many_arguments)]
 pub fn axis_drag_delta(
     cam: &EditorCamera,
     aspect: f32,
@@ -305,10 +306,12 @@ mod tests {
     fn forward_matches_view_proj_for_yaw_pitch_zero() {
         // With yaw=0, pitch=0, the camera looks down -Z. Projecting a point
         // at (0, 0, -5) should land at the viewport center horizontally.
-        let mut cam = EditorCamera::default();
-        cam.yaw = 0.0;
-        cam.pitch = 0.0;
-        cam.pos = Vec3::new(0.0, 0.0, 10.0);
+        let cam = EditorCamera {
+            yaw: 0.0,
+            pitch: 0.0,
+            pos: Vec3::new(0.0, 0.0, 10.0),
+            ..Default::default()
+        };
         let vp = view_proj(&cam, Dimension::D3, 1.0);
         let p = project(vp, Vec3::new(0.0, 0.0, 0.0), [0, 0, 100, 100], 1.0);
         // Point at world origin should project to viewport center (50, 50).
