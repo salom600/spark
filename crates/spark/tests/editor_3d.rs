@@ -27,16 +27,16 @@ fn build_frame_draw_with_directional_light_and_cube_no_panic() {
         "spark_editor_add_cube_3d_{}_{}",
         std::process::id(),
         std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
     ));
     let _ = std::fs::remove_dir_all(&dir);
     spark::project::Project::create_from_template(&dir, "Test3D", Dimension::D3)
         .expect("template project creates");
 
-    let mut engine = Engine::headless(dir.canonicalize().unwrap().as_path())
-        .expect("headless engine boots");
+    let mut engine =
+        Engine::headless(dir.canonicalize().unwrap().as_path()).expect("headless engine boots");
     // Spawn the cube the same way the editor's `Scene → Add Cube (3D)` does.
     engine.scene.world.spawn((
         spark::ecs::Name("cube".into()),
@@ -53,7 +53,10 @@ fn build_frame_draw_with_directional_light_and_cube_no_panic() {
         .query::<&Light>()
         .iter()
         .any(|(_, l)| matches!(l.kind, LightKind::Directional { .. }));
-    assert!(has_dir, "template 3D scene must include a directional light");
+    assert!(
+        has_dir,
+        "template 3D scene must include a directional light"
+    );
 
     // build_frame_draw is the same path the editor runs every frame. It
     // must not panic with a Sun + cube present.

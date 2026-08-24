@@ -51,12 +51,7 @@ pub fn view_proj(cam: &EditorCamera, dimension: Dimension, aspect: f32) -> Mat4 
 
 /// Project a 3D world point to screen pixels. Returns None if the point is
 /// behind the camera (w <= 0).
-pub fn project(
-    view_proj: Mat4,
-    p: Vec3,
-    viewport_px: [u32; 4],
-    ppp: f32,
-) -> Option<egui::Pos2> {
+pub fn project(view_proj: Mat4, p: Vec3, viewport_px: [u32; 4], ppp: f32) -> Option<egui::Pos2> {
     let clip = view_proj * Vec4::new(p.x, p.y, p.z, 1.0);
     if clip.w <= 0.0 {
         return None;
@@ -119,9 +114,21 @@ pub fn pick_ray(
 /// else None. AABB defined by `center` + `half_extents`.
 pub fn ray_aabb(origin: Vec3, dir: Vec3, center: Vec3, half_extents: Vec3) -> Option<f32> {
     let inv = Vec3::new(
-        if dir.x.abs() > 1e-6_f32 { 1.0_f32 / dir.x } else { f32::INFINITY },
-        if dir.y.abs() > 1e-6_f32 { 1.0_f32 / dir.y } else { f32::INFINITY },
-        if dir.z.abs() > 1e-6_f32 { 1.0_f32 / dir.z } else { f32::INFINITY },
+        if dir.x.abs() > 1e-6_f32 {
+            1.0_f32 / dir.x
+        } else {
+            f32::INFINITY
+        },
+        if dir.y.abs() > 1e-6_f32 {
+            1.0_f32 / dir.y
+        } else {
+            f32::INFINITY
+        },
+        if dir.z.abs() > 1e-6_f32 {
+            1.0_f32 / dir.z
+        } else {
+            f32::INFINITY
+        },
     );
     let t1 = (center - half_extents - origin) * inv;
     let t2 = (center + half_extents - origin) * inv;
@@ -168,9 +175,18 @@ pub fn draw_grid_and_axes(
     // World axes (length 1.5) at the origin.
     let len = 1.5;
     let axes = [
-        (Vec3::new(len, 0.0, 0.0), egui::Color32::from_rgb(220, 60, 60)),
-        (Vec3::new(0.0, len, 0.0), egui::Color32::from_rgb(60, 220, 60)),
-        (Vec3::new(0.0, 0.0, len), egui::Color32::from_rgb(60, 120, 220)),
+        (
+            Vec3::new(len, 0.0, 0.0),
+            egui::Color32::from_rgb(220, 60, 60),
+        ),
+        (
+            Vec3::new(0.0, len, 0.0),
+            egui::Color32::from_rgb(60, 220, 60),
+        ),
+        (
+            Vec3::new(0.0, 0.0, len),
+            egui::Color32::from_rgb(60, 120, 220),
+        ),
     ];
     for (end, color) in axes {
         let p1 = project(view_proj, Vec3::ZERO, viewport_px, ppp);
@@ -194,9 +210,18 @@ pub fn draw_translate_gizmo(
 ) -> Option<usize> {
     let len = 1.5;
     let axes = [
-        (Vec3::new(len, 0.0, 0.0), egui::Color32::from_rgb(220, 60, 60)),
-        (Vec3::new(0.0, len, 0.0), egui::Color32::from_rgb(60, 220, 60)),
-        (Vec3::new(0.0, 0.0, len), egui::Color32::from_rgb(60, 120, 220)),
+        (
+            Vec3::new(len, 0.0, 0.0),
+            egui::Color32::from_rgb(220, 60, 60),
+        ),
+        (
+            Vec3::new(0.0, len, 0.0),
+            egui::Color32::from_rgb(60, 220, 60),
+        ),
+        (
+            Vec3::new(0.0, 0.0, len),
+            egui::Color32::from_rgb(60, 120, 220),
+        ),
     ];
     let mut hit = None;
     let mut best_dist = 8.0_f32; // pixels
@@ -229,11 +254,7 @@ fn dist_to_segment(p: egui::Pos2, a: egui::Pos2, b: egui::Pos2) -> f32 {
 /// Picking: cast a ray and find the nearest entity with a Transform whose
 /// AABB (a unit-ish box around the entity's position) intersects. Returns
 /// the entity and the hit distance.
-pub fn pick_entity(
-    world: &hecs::World,
-    origin: Vec3,
-    dir: Vec3,
-) -> Option<(hecs::Entity, f32)> {
+pub fn pick_entity(world: &hecs::World, origin: Vec3, dir: Vec3) -> Option<(hecs::Entity, f32)> {
     let mut best: Option<(hecs::Entity, f32)> = None;
     for (e, t) in world.query::<&Transform>().iter() {
         // Default half-extents: 0.5 in each axis (covers a unit cube).
@@ -279,8 +300,7 @@ pub fn axis_drag_delta(
     let screen_axis_dir = screen_axis.normalized();
     let mouse_delta_px = (mouse_px - start_mouse).dot(screen_axis_dir);
     let dist = (cam.pos - gizmo_origin).length();
-    let world_per_px =
-        (cam.fov.to_radians().tan() * dist) / (viewport_px[3] as f32 / ppp).max(1.0);
+    let world_per_px = (cam.fov.to_radians().tan() * dist) / (viewport_px[3] as f32 / ppp).max(1.0);
     let world_delta = mouse_delta_px * world_per_px;
     axis_vec * world_delta
 }
@@ -298,7 +318,12 @@ mod tests {
         assert!(hit.is_some());
         assert!((hit.unwrap() - 4.5).abs() < 0.01);
         // Box far to the side — should miss.
-        let miss = ray_aabb(origin, dir, Vec3::new(10.0, 0.0, 0.0), Vec3::new(0.5, 0.5, 0.5));
+        let miss = ray_aabb(
+            origin,
+            dir,
+            Vec3::new(10.0, 0.0, 0.0),
+            Vec3::new(0.5, 0.5, 0.5),
+        );
         assert!(miss.is_none());
     }
 

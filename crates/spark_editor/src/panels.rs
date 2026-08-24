@@ -317,7 +317,9 @@ impl Editor {
         {
             let origin = t.position;
             drop(t);
-            let mouse = ui.input(|i| i.pointer.hover_pos()).unwrap_or(egui::pos2(0.0, 0.0));
+            let mouse = ui
+                .input(|i| i.pointer.hover_pos())
+                .unwrap_or(egui::pos2(0.0, 0.0));
             let _ = crate::gizmo::draw_translate_gizmo(
                 painter,
                 vp,
@@ -337,29 +339,26 @@ impl Editor {
         let viewport = self.state.viewport_rect_px();
         let aspect = viewport.2 as f32 / viewport.3.max(1) as f32;
 
-        let (primary, middle, secondary, delta, pressed, released, mouse) =
-            ui.ctx().input(|i| {
-                (
-                    i.pointer.primary_down(),
-                    i.pointer.middle_down(),
-                    i.pointer.secondary_down(),
-                    i.pointer.delta(),
-                    i.pointer.button_pressed(egui::PointerButton::Primary),
-                    i.pointer.button_released(egui::PointerButton::Primary),
-                    i.pointer.hover_pos(),
-                )
-            });
+        let (primary, middle, secondary, delta, pressed, released, mouse) = ui.ctx().input(|i| {
+            (
+                i.pointer.primary_down(),
+                i.pointer.middle_down(),
+                i.pointer.secondary_down(),
+                i.pointer.delta(),
+                i.pointer.button_pressed(egui::PointerButton::Primary),
+                i.pointer.button_released(egui::PointerButton::Primary),
+                i.pointer.hover_pos(),
+            )
+        });
 
         // Orbit (RMB drag).
         if secondary {
-            self.editor_cam
-                .look(Vec2::new(delta.x, delta.y));
+            self.editor_cam.look(Vec2::new(delta.x, delta.y));
             return;
         }
         // Pan (MMB drag).
         if middle {
-            self.editor_cam
-                .pan(Vec2::new(delta.x, delta.y), dimension);
+            self.editor_cam.pan(Vec2::new(delta.x, delta.y), dimension);
             return;
         }
 
@@ -432,9 +431,15 @@ impl Editor {
     }
 
     fn apply_gizmo_drag(&mut self, aspect: f32, mouse_pos: egui::Pos2, ppp: f32) {
-        let Some(axis) = self.state.gizmo_drag_axis else { return };
-        let Some(start_mouse) = self.state.gizmo_drag_start_mouse else { return };
-        let Some(start_t) = self.state.gizmo_drag_start_transform else { return };
+        let Some(axis) = self.state.gizmo_drag_axis else {
+            return;
+        };
+        let Some(start_mouse) = self.state.gizmo_drag_start_mouse else {
+            return;
+        };
+        let Some(start_t) = self.state.gizmo_drag_start_transform else {
+            return;
+        };
         let Some(e) = self.state.selected else { return };
         if !self.engine.scene.world.contains(e) {
             return;
@@ -457,7 +462,6 @@ impl Editor {
             },
         );
     }
-
 
     // -----------------------------------------------------------------------
     // Bottom: asset browser + console
