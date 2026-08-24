@@ -60,6 +60,9 @@ impl Default for Input {
 }
 
 impl Input {
+    /// Device-free input (keyboard + mouse state only). Used by headless
+    /// engines and tests — gamepad backends (XInput/WinRT on Windows) are
+    /// not probed, which keeps CI runners and servers safe.
     pub fn new() -> Self {
         Self {
             keys_held: HashMap::new(),
@@ -77,9 +80,16 @@ impl Input {
             pad_right: Vec2::ZERO,
             pad_trigger: Vec2::ZERO,
             actions: HashMap::new(),
-            gilrs: gilrs::Gilrs::new().ok(),
+            gilrs: None,
             pad_available: false,
         }
+    }
+
+    /// Input with the gamepad backend attached (windowed games/editor).
+    pub fn with_gamepads() -> Self {
+        let mut input = Self::new();
+        input.gilrs = gilrs::Gilrs::new().ok();
+        input
     }
 
     /// Install named action bindings (from `project.ron`).

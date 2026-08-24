@@ -687,7 +687,7 @@ mod tests {
             Self {
                 globals: HashMap::new(),
                 assets: Assets::new(&tmp),
-                audio: Audio::new(),
+                audio: Audio::disabled(),
                 physics: Physics::default(),
                 rt: RuleRuntime::default(),
                 spawned: Vec::new(),

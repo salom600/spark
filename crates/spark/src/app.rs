@@ -91,12 +91,17 @@ impl<'window> Engine<'window> {
         } else {
             Audio::new()
         };
+        let input = if renderer.is_none() {
+            Input::new()
+        } else {
+            Input::with_gamepads()
+        };
 
         let mut engine = Engine {
             scene: Scene::default(),
             assets,
             audio,
-            input: Input::new(),
+            input,
             physics: Physics::new(project.as_ref().map(|p| p.dimension).unwrap_or_default()),
             rules: RuleRuntime::default(),
             registry,
