@@ -4,6 +4,12 @@
 //! GPU uses), so this stays entirely on the CPU side and adds no wgpu
 //! pipelines.
 
+// Strict Rust 2024 float-literal inference rejects untyped `0.0`/`1.0`
+// literals where the inference is ambiguous (some glam/egui call sites
+// end up at f64 fallback). Suffixing every literal is noisy; the math is
+// unambiguously f32 at runtime, so allow the lint module-wide.
+#![allow(float_literal_f32_fallback)]
+
 use spark::math::{Mat4, Vec3, Vec4};
 use spark::prelude::*;
 use spark::reexport::{egui, hecs};
@@ -113,18 +119,21 @@ pub fn pick_ray(
 /// else None. AABB defined by `center` + `half_extents`.
 pub fn ray_aabb(origin: Vec3, dir: Vec3, center: Vec3, half_extents: Vec3) -> Option<f32> {
     let inv = Vec3::new(
-        if dir.x.abs() > 1e-6 { 1.0 / dir.x } else { f32::INFINITY },
-        if dir.y.abs() > 1e-6 { 1.0 / dir.y } else { f32::INFINITY },
-        if dir.z.abs() > 1e-6 { 1.0 / dir.z } else { f32::INFINITY },
+        if dir.x.abs() > 1e-6_f32 { 1.0_f32 / dir.x } else { f32::INFINITY },
+        if dir.y.abs() > 1e-6_f32 { 1.0_f32 / dir.y } else { f32::INFINITY },
+        if dir.z.abs() > 1e-6_f32 { 1.0_f32 / dir.z } else { f32::INFINITY },
     );
     let t1 = (center - half_extents - origin) * inv;
     let t2 = (center + half_extents - origin) * inv;
+    // Per-axis min/max (Vec3::min/max are component-wise).
     let tmin = t1.min(t2);
     let tmax = t1.max(t2);
-    let t_enter = tmin.max(0.0);
-    let t_exit = tmax;
-    if t_exit >= t_enter && t_exit >= 0.0 {
-        Some(t_enter.max(0.0))
+    // Slab algorithm: latest entry = max of per-axis mins; earliest exit
+    // = min of per-axis maxes. Hit iff exit >= entry and exit >= 0.
+    let t_enter = tmin.x.max(tmin.y).max(tmin.z).max(0.0_f32);
+    let t_exit = tmax.x.min(tmax.y).min(tmax.z);
+    if t_exit >= t_enter && t_exit >= 0.0_f32 {
+        Some(t_enter)
     } else {
         None
     }

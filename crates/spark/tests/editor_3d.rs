@@ -13,7 +13,6 @@
 use spark::app::Engine;
 use spark::components::{Light, LightKind, MeshRenderer, Transform};
 use spark::math::Vec3;
-use spark::prelude::*;
 use spark::render::build_frame_draw;
 use spark::scene::Dimension;
 
@@ -58,7 +57,7 @@ fn build_frame_draw_with_directional_light_and_cube_no_panic() {
 
     // build_frame_draw is the same path the editor runs every frame. It
     // must not panic with a Sun + cube present.
-    let draw = build_frame_draw(&engine.scene, &mut engine.assets, 1.778, None);
+    let draw = build_frame_draw(&engine.scene, &mut engine.assets, 1.778_f32, None);
     assert!(draw.has_directional, "directional light should be detected");
     assert!(
         !draw.meshes.is_empty(),

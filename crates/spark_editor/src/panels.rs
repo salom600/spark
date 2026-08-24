@@ -266,7 +266,7 @@ impl Editor {
             ui.horizontal(|ui| {
                 use crate::state::GizmoMode;
                 let mode = self.state.gizmo_mode;
-                let mk = |label: &str, m: GizmoMode, ui: &mut egui::Ui| {
+                let mut mk = |label: &str, m: GizmoMode, ui: &mut egui::Ui| {
                     if ui.selectable_label(mode == m, label).clicked() {
                         self.state.gizmo_mode = m;
                     }
@@ -345,8 +345,8 @@ impl Editor {
                     i.pointer.middle_down(),
                     i.pointer.secondary_down(),
                     i.pointer.delta(),
-                    i.pointer.pressed(egui::PointerButton::Primary),
-                    i.pointer.released(egui::PointerButton::Primary),
+                    i.pointer.button_pressed(egui::PointerButton::Primary),
+                    i.pointer.button_released(egui::PointerButton::Primary),
                     i.pointer.hover_pos(),
                 )
             });
