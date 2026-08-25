@@ -475,7 +475,7 @@ impl Editor {
     // UI layout
     // -----------------------------------------------------------------------
 
-    fn ui(&mut self, ctx: &egui::Context) {
+    pub fn ui(&mut self, ctx: &egui::Context) {
         self.menu_bar(ctx);
         // Maximize-on-play: while playing, the viewport becomes the whole
         // window (a real game view at the window's resolution) unless the
@@ -500,9 +500,16 @@ impl Editor {
                     self.inspector_panel(ui);
                 });
         }
-        egui::CentralPanel::default().show(ctx, |ui| {
-            self.viewport_panel(ui, ctx);
-        });
+        // The viewport panel must be TRANSPARENT: the wgpu scene renders
+        // underneath (main pass, scissored to this rect) and the egui pass
+        // draws on top with LoadOp::Load. A default CentralPanel paints an
+        // opaque panel_fill background that would overdraw the whole scene —
+        // exactly the "outline visible but no shaded mesh" bug.
+        egui::CentralPanel::default()
+            .frame(egui::Frame::default().fill(egui::Color32::TRANSPARENT))
+            .show(ctx, |ui| {
+                self.viewport_panel(ui, ctx);
+            });
     }
 
     fn menu_bar(&mut self, ctx: &egui::Context) {
