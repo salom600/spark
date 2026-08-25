@@ -3,11 +3,11 @@
 *A lightweight data-driven game engine in Rust — 2D and 3D, one architecture, one binary.*
 
 ```
-   engine core      4,417 lines
+   engine core      5,506 lines
    codegen macros     171 lines
-   editor + runner  1,379 lines
+   editor + runner  4,218 lines
    ─────────────────────────────
-   total             6,967 lines   (target ≤ 10,000 · ceiling 15,000, CI-enforced)
+   total             9,895 lines   (target ≤ 10,000 · ceiling 15,000, CI-enforced)
 ```
 
 [![CI](https://github.com/salom600/spark/actions/workflows/ci.yml/badge.svg)](https://github.com/salom600/spark/actions/workflows/ci.yml)
@@ -48,7 +48,7 @@ cd spark
 cargo run -p spark_editor            # open the editor
 cargo run -p spark_editor -- --game demos/ember_run      # play the 2D demo
 cargo run -p spark_editor -- --game demos/playground     # play the 3D demo
-cargo test --workspace               # 21 tests, GPU-free
+cargo test --workspace               # 80+ tests, GPU-free
 ```
 
 ### First project in the editor
@@ -69,11 +69,38 @@ cargo test --workspace               # 21 tests, GPU-free
 
 | Input | Action |
 |---|---|
-| Left-drag | pan |
+| Q / W / E / R / T / Y | Hand · Move · Rotate · Scale · Rect · Transform tool |
+| Left-drag | gizmo drag / entity pick (Ctrl+click = multi-select) |
+| Middle-drag | pan |
 | Right-drag | orbit (3D) |
 | Wheel | zoom |
-| F5 | play / stop |
-| Ctrl+Z / Ctrl+Y | undo / redo (via Edit menu) |
+| F / Home | focus selection / frame all |
+| Delete / Ctrl+D | delete / duplicate |
+| Ctrl+S / Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z | save / undo / redo |
+| F5 / F6 / F7 / F8 | play / pause / step frame / restart |
+
+Drag assets from the browser into the viewport to spawn them. Drag hierarchy
+rows onto each other to reparent. Double-click a name to rename.
+
+## Feature status (honest matrix)
+
+Everything below is exercised by GPU-free integration tests against the real
+engine/editor pipeline. "Partial" means real but with documented limits.
+
+| Subsystem | Status | Notes |
+|---|---|---|
+| Renderer (2D sprites, 3D PBR, shadows, glTF) | ✅ real | directional shadows; spot/point lights unshadowed |
+| Play mode (play/pause/stop/restart/step) | ✅ real | snapshot isolation, maximize-on-play game view |
+| Physics (rigidbodies, colliders, events) | ✅ real | shapes scale with entity transforms |
+| Rules & Vars gameplay | ✅ real | Start fires exactly once; camera switching |
+| Audio (music autoplay, volume, loop) | ✅ real | volume edits apply live |
+| Assets (import, previews, DnD, hot reload) | ✅ real | import is path-based (no native dialog) |
+| Undo/redo | ✅ real | every editor mutation, incl. gizmo drags |
+| Save/load (RON scenes, prefabs) | ✅ real | atomic writes |
+| Separate OS game window in-editor | partial | embedded max game view + standalone `--game` runner |
+| Asset dependency tracking | partial | path references, no dependency graph |
+| Multi-object inspector editing | partial | gizmo drags act on the selection; inspector edits the primary entity |
+| Post-processing, UI toolkit, scripting | not yet | roadmap |
 
 ## Bundled demos (all assets procedurally generated)
 

@@ -3118,6 +3118,7 @@ dependencies = [
  "egui-wgpu",
  "egui-winit",
  "env_logger",
+ "image",
  "log",
  "ron",
  "serde",
